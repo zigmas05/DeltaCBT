@@ -1,0 +1,20 @@
+@import "tailwindcss";
+
+/* App custom styles (minimal) */
+html, body, #root {
+	height: 100%;
+}
+body {
+	margin: 0;
+}
+
+/* Fix Tailwind CSS conflict with KaTeX */
+.katex * {
+  border-color: currentColor !important;
+}
+
+.katex svg {
+  display: inline-block !important;
+  vertical-align: baseline !important;
+  fill: currentColor !important;
+}

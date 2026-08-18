@@ -1,0 +1,6 @@
+{
+  "name": "Aplikasi Try Out & Bimbingan Belajar",
+  "description": "Aplikasi Web Try Out CBT & Manajemen Bimbel dengan 3 Role (Admin, Guru, Siswa), KaTeX LaTeX rendering, Kiosk Exam Mode, Auto-grading & Golang Backend Monorepo.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
