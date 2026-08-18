@@ -76,6 +76,17 @@ const readPersistedState = <T,>(key: string, fallback: T): T => {
   }
 };
 
+const readSessionState = <T,>(key: string, fallback: T): T => {
+  if (typeof window === 'undefined') return fallback;
+
+  try {
+    const saved = window.sessionStorage.getItem(key);
+    return saved ? (JSON.parse(saved) as T) : fallback;
+  } catch {
+    return fallback;
+  }
+};
+
 export default function App() {
   // Helper to check if current URL is intended for staff panel
   const isPanelPath = () => {
@@ -87,18 +98,26 @@ export default function App() {
 
   // Tambahkan di deretan useState App.tsx
   const [currentUser, setCurrentUser] = useState<StaffUser | StudentUser | null>(() =>
-    readPersistedState('tryout_current_user', null)
+    readSessionState('tryout_current_user', null)
   );
 
   // Tambahkan useEffect untuk simpan session user
   useEffect(() => {
-    window.localStorage.setItem('tryout_current_user', JSON.stringify(currentUser));
+    window.sessionStorage.setItem('tryout_current_user', JSON.stringify(currentUser));
   }, [currentUser]);
 
   // App Global State
-  const [isLoggedIn, setIsLoggedIn] = useState<boolean>(false);
+  const [isLoggedIn, setIsLoggedIn] = useState<boolean>(() => readSessionState('tryout_is_logged_in', false));
   const [loginPortal, setLoginPortal] = useState<'siswa' | 'staff'>(() => (isPanelPath() ? 'staff' : 'siswa'));
-  const [currentRole, setCurrentRole] = useState<UserRole>('admin');
+  const [currentRole, setCurrentRole] = useState<UserRole>(() => readSessionState('tryout_current_role', 'admin'));
+
+  useEffect(() => {
+    window.sessionStorage.setItem('tryout_is_logged_in', JSON.stringify(isLoggedIn));
+  }, [isLoggedIn]);
+
+  useEffect(() => {
+    window.sessionStorage.setItem('tryout_current_role', JSON.stringify(currentRole));
+  }, [currentRole]);
   const [settings, setSettings] = useState<Settings>(defaultSettings);
   const [classes, setClasses] = useState<ClassItem[]>(() => readPersistedState<ClassItem[]>('tryout_classes', []));
   const [staff, setStaff] = useState<StaffUser[]>(() => readPersistedState<StaffUser[]>('tryout_staff', []));
@@ -369,6 +388,11 @@ export default function App() {
     const targetPortal = currentRole === 'siswa' ? 'siswa' : 'staff';
     setLoginPortal(targetPortal);
     setIsLoggedIn(false);
+    setCurrentUser(null);
+    
+    window.sessionStorage.removeItem('tryout_current_user');
+    window.sessionStorage.removeItem('tryout_is_logged_in');
+    window.sessionStorage.removeItem('tryout_current_role');
 
     setLogoutNotification(
       `Anda telah berhasil keluar dari ${targetPortal === 'siswa' ? 'Portal Siswa' : 'Portal Staff'}.`

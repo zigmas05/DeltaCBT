@@ -1,0 +1,13 @@
+<IfModule mod_rewrite.c>
+  RewriteEngine On
+  RewriteBase /
+  
+  # Jika URL yang diminta adalah file nyata (contoh: /assets/index.js, /favicon.ico)
+  RewriteCond %{REQUEST_FILENAME} !-f
+  
+  # Jika URL yang diminta adalah direktori/folder nyata
+  RewriteCond %{REQUEST_FILENAME} !-d
+  
+  # Jika kondisi di atas tidak terpenuhi, kembalikan ke index.html dan biarkan React Router bekerja
+  RewriteRule ^ index.html [QSA,L]
+</IfModule>
