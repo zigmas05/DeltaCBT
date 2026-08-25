@@ -138,3 +138,10 @@ export interface ExamScoreRecord {
   date: string;
   answers?: any[];
 }
+
+export type PrintState = 
+  | { type: 'beritaAcara' }
+  | { type: 'package'; pkg: QuestionPackage }
+  | { type: 'examResult'; score: ExamScoreRecord; reviewPackage: QuestionPackage }
+  | null;
+

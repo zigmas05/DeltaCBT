@@ -425,6 +425,25 @@ export async function createSubjectInGolang(code: string, name: string): Promise
   }
 }
 
+export async function createSubjectInSupabase(code: string, name: string): Promise<any | null> {
+  if (!isSupabaseConfigured()) return null;
+  try {
+    const { data, error } = await supabase
+      .from('subjects')
+      .insert([{ code: code.toUpperCase(), name }])
+      .select()
+      .single();
+    if (error) {
+      console.warn('createSubjectInSupabase error:', error);
+      return null;
+    }
+    return data;
+  } catch (err) {
+    console.error('createSubjectInSupabase exception:', err);
+    return null;
+  }
+}
+
 export async function createPackageInGolang(payload: any): Promise<any | null> {
   try {
     const toInsert = {
@@ -675,6 +694,61 @@ export async function updateQuestionInGolang(id: number, payload: any): Promise<
   }
 }
 
+export async function createQuestionInSupabase(payload: any): Promise<any | null> {
+  if (!isSupabaseConfigured()) return null;
+  try {
+    const toInsert = {
+      package_id: payload.packageId ?? payload.package_id,
+      question_type: payload.questionType ?? payload.question_type,
+      type_label: payload.typeLabel ?? payload.type_label ?? '',
+      content: payload.content || '',
+      discussion: payload.discussion || '',
+      points_default: payload.pointsDefault ?? payload.points_default ?? 10,
+      options: payload.options || [],
+    };
+    const { data, error } = await supabase.from('questions').insert(toInsert).select().single();
+    if (error) {
+      console.warn('createQuestionInSupabase error:', error);
+      return null;
+    }
+    return data ? {
+      ...data,
+      packageId: data.package_id ?? data.packageId ?? toInsert.package_id,
+      questionType: data.question_type ?? data.questionType ?? toInsert.question_type,
+      typeLabel: data.type_label ?? data.typeLabel ?? toInsert.type_label,
+      pointsDefault: data.points_default ?? data.pointsDefault ?? toInsert.points_default,
+      options: data.options ?? [],
+    } : null;
+  } catch (err) {
+    console.error('createQuestionInSupabase exception:', err);
+    return null;
+  }
+}
+
+export async function updateQuestionInSupabase(id: number, payload: any): Promise<boolean> {
+  if (!isSupabaseConfigured()) return false;
+  try {
+    const toUpdate: any = {};
+    if (payload.packageId !== undefined || payload.package_id !== undefined) toUpdate.package_id = payload.packageId ?? payload.package_id;
+    if (payload.questionType !== undefined || payload.question_type !== undefined) toUpdate.question_type = payload.questionType ?? payload.question_type;
+    if (payload.typeLabel !== undefined || payload.type_label !== undefined) toUpdate.type_label = payload.typeLabel ?? payload.type_label;
+    if (payload.content !== undefined) toUpdate.content = payload.content;
+    if (payload.discussion !== undefined) toUpdate.discussion = payload.discussion;
+    if (payload.pointsDefault !== undefined || payload.points_default !== undefined) toUpdate.points_default = payload.pointsDefault ?? payload.points_default;
+    if (payload.options !== undefined) toUpdate.options = payload.options;
+
+    const { error } = await supabase.from('questions').update(toUpdate).eq('id', id);
+    if (error) {
+      console.warn('updateQuestionInSupabase error:', error);
+      return false;
+    }
+    return true;
+  } catch (err) {
+    console.error('updateQuestionInSupabase exception:', err);
+    return false;
+  }
+}
+
 export async function deleteQuestionInGolang(id: number): Promise<boolean> {
   try {
     const res = await fetch(`${BACKEND_BASE}/api/questions/${id}`, {
@@ -684,6 +758,21 @@ export async function deleteQuestionInGolang(id: number): Promise<boolean> {
     return res.ok;
   } catch (err) {
     console.error('deleteQuestionInGolang error:', err);
+    return false;
+  }
+}
+
+export async function deleteQuestionInSupabase(id: number): Promise<boolean> {
+  if (!isSupabaseConfigured()) return false;
+  try {
+    const { error } = await supabase.from('questions').delete().eq('id', id);
+    if (error) {
+      console.warn('deleteQuestionInSupabase error:', error);
+      return false;
+    }
+    return true;
+  } catch (err) {
+    console.error('deleteQuestionInSupabase exception:', err);
     return false;
   }
 }
@@ -1307,3 +1396,20 @@ export async function clearAllExamSessionsFromSupabase(): Promise<boolean> {
     return false;
   }
 }
+
+export async function deleteClassFromSupabase(classId: number): Promise<boolean> {
+  if (!isSupabaseConfigured()) return false;
+  try {
+    const { error } = await supabase.from('classes').delete().eq('id', classId);
+    if (error) {
+      console.error('Error delete class from Supabase:', error);
+      return false;
+    }
+    return true;
+  } catch (err) {
+    console.error('Error in deleteClassFromSupabase:', err);
+    return false;
+  }
+}
+
+

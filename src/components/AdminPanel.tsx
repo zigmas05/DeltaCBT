@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import {
   deleteStudentFromSupabase,
+  deleteClassFromSupabase,
+  deleteStaffFromSupabase,
   upsertClassToSupabase,
   upsertStaffToSupabase,
   upsertStudentToSupabase,
@@ -10,7 +12,25 @@ import {
   resetSessionInSupabase,
   updateExamScoreReviewStatus,
   upsertScoreToSupabase,
-  upsertSessionToSupabase
+  upsertSessionToSupabase,
+  createPackageInGolang,
+  updatePackageInGolang,
+  createPackageInSupabase,
+  updatePackageInSupabase,
+  createQuestionInGolang,
+  updateQuestionInGolang,
+  createQuestionInSupabase,
+  updateQuestionInSupabase,
+  deleteQuestionInGolang,
+  deleteQuestionInSupabase,
+  deletePackageInGolang,
+  deletePackageInSupabase,
+  createSubjectInGolang,
+  createSubjectInSupabase,
+  deleteAnnouncementInGolang,
+  deleteAnnouncementFromSupabase,
+  createAnnouncementInGolang,
+  upsertAnnouncementToSupabase
 } from '../lib/supabaseService';
 import { calculateTotalExamScore } from '../lib/scoreCalculator';
 import {
@@ -27,6 +47,7 @@ import {
   QuestionItem,
   QuestionType,
   TargetAudience,
+  PrintState,
 } from '../types';
 import { KaTeXRenderer } from './KaTeXRenderer';
 import {
@@ -107,7 +128,7 @@ interface AdminPanelProps {
   setScores: React.Dispatch<React.SetStateAction<ExamScoreRecord[]>>;
   currentToken: string;
   onRefreshToken: () => void;
-  onOpenPrint: () => void;
+  onOpenPrint: (state: PrintState) => void;
   activeTab?: string;
   setActiveTab?: (tab: any) => void;
 }
@@ -174,6 +195,16 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   const [copiedDDL, setCopiedDDL] = useState(false);
   const [copiedGolang, setCopiedGolang] = useState(false);
   const [copiedEnv, setCopiedEnv] = useState<string | null>(null);
+
+  const handleDeleteAnnouncement = async (id: number) => {
+    if (confirm('Apakah Anda yakin ingin menghapus pengumuman ini?')) {
+      const success = await deleteAnnouncementInGolang(id);
+      if (!success) {
+        await deleteAnnouncementFromSupabase(id);
+      }
+      setAnnouncements((prev) => prev.filter((a) => a.id !== id));
+    }
+  };
 
   const setActiveTab = (tab: any) => {
     if (setActiveTabProp) setActiveTabProp(tab);
@@ -803,15 +834,30 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   });
 
   // Add Subject handler
-  const handleAddSubject = (e: React.FormEvent) => {
+  const handleAddSubject = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newSubjectName || !newSubjectCode) return;
-    const newSub: SubjectItem = {
-      id: Date.now(),
-      code: newSubjectCode.toUpperCase(),
-      name: newSubjectName,
-    };
-    setSubjects((prev) => [...prev, newSub]);
+
+    const savedGolang = await createSubjectInGolang(newSubjectCode, newSubjectName);
+    let finalSub = savedGolang;
+    if (!finalSub) {
+      finalSub = await createSubjectInSupabase(newSubjectCode, newSubjectName);
+    }
+
+    if (!finalSub) {
+      // Fallback local only if DB fails
+      finalSub = {
+        id: Date.now(),
+        code: newSubjectCode.toUpperCase(),
+        name: newSubjectName,
+      };
+    }
+
+    setSubjects((prev) => [...prev, {
+      id: finalSub.id || Date.now(),
+      code: finalSub.code || newSubjectCode.toUpperCase(),
+      name: finalSub.name || newSubjectName
+    }]);
     setNewSubjectCode('');
     setNewSubjectName('');
     setShowSubjectModal(false);
@@ -845,74 +891,104 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   };
 
   // Save (Create or Edit) Package
-  const handleSavePackage = (e: React.FormEvent) => {
+  const handleSavePackage = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!pkgCode || !pkgName) return;
 
     const subj = subjects.find((s) => s.id === pkgSubjectId);
     const teacher = staff.find((s) => s.id === pkgTeacherId);
 
+    const updatedPkg = {
+      code: pkgCode,
+      name: pkgName,
+      subjectId: pkgSubjectId,
+      subjectName: subj ? subj.name : 'Mata Pelajaran',
+      teacherId: pkgTeacherId,
+      teacherName: teacher ? teacher.name : 'Guru Pengajar',
+      classes: pkgClasses.length > 0 ? pkgClasses : ['Umum'],
+      isRandomOrder: pkgIsRandomOrder,
+      durationMinutes: pkgDurationMinutes,
+    };
+
     if (editingPackageId) {
+      const successGolang = await updatePackageInGolang(editingPackageId, updatedPkg);
+      if (!successGolang) {
+        await updatePackageInSupabase(editingPackageId, updatedPkg);
+      }
       setPackages((prev) =>
         prev.map((p) =>
           p.id === editingPackageId
-            ? {
-              ...p,
-              code: pkgCode,
-              name: pkgName,
-              subjectId: pkgSubjectId,
-              subjectName: subj ? subj.name : 'Mata Pelajaran',
-              teacherId: pkgTeacherId,
-              teacherName: teacher ? teacher.name : 'Guru Pengajar',
-              classes: pkgClasses.length > 0 ? pkgClasses : ['Umum'],
-              isRandomOrder: pkgIsRandomOrder,
-              durationMinutes: pkgDurationMinutes,
-            }
+            ? { ...p, ...updatedPkg }
             : p
         )
       );
       alert('Data paket soal berhasil diperbarui!');
     } else {
-      const newPkg: QuestionPackage = {
-        id: Date.now(),
-        code: pkgCode,
-        name: pkgName,
-        subjectId: pkgSubjectId,
-        subjectName: subj ? subj.name : 'Mata Pelajaran',
-        teacherId: pkgTeacherId,
-        teacherName: teacher ? teacher.name : 'Guru Pengajar',
-        classes: pkgClasses.length > 0 ? pkgClasses : ['Umum'],
-        isRandomOrder: pkgIsRandomOrder,
-        durationMinutes: pkgDurationMinutes,
+      const newPkg: any = {
+        id: Date.now(), // Fallback ID
+        ...updatedPkg,
         questions: [],
       };
-      setPackages((prev) => [newPkg, ...prev]);
+
+      const savedPkgGolang = await createPackageInGolang(newPkg);
+      const finalPkg = savedPkgGolang || await createPackageInSupabase(newPkg) || newPkg;
+
+      setPackages((prev) => [finalPkg, ...prev]);
       alert('Paket soal baru berhasil dibuat! Silakan klik tombol "Input Soal" untuk memasukkan butir pertanyaan.');
     }
     setShowPackageModal(false);
   };
 
   // Duplicate Package
-  const handleDuplicatePackage = (pkgId: number) => {
+  const handleDuplicatePackage = async (pkgId: number) => {
     const target = packages.find((p) => p.id === pkgId);
     if (!target) return;
-    const dupPkg: QuestionPackage = {
+    if (!confirm(`Apakah Anda yakin ingin menduplikat paket soal "${target.name}" beserta ${target.questions.length} soal di dalamnya?`)) return;
+
+    // 1. Create duplicate package
+    const dupPkgPayload: QuestionPackage = {
       ...target,
-      id: Date.now(),
-      code: `${target.code}-COPY`,
+      id: 0,
+      code: `${target.code}-COPY-${Math.floor(Math.random() * 1000)}`,
       name: `${target.name} (Salinan)`,
-      questions: target.questions.map((q) => ({
-        ...q,
-        id: Date.now() + Math.floor(Math.random() * 10000),
-      })),
+      questions: [],
     };
-    setPackages((prev) => [dupPkg, ...prev]);
+
+    const savedPkgGolang = await createPackageInGolang(dupPkgPayload);
+    const finalPkg = savedPkgGolang || await createPackageInSupabase(dupPkgPayload) || { ...dupPkgPayload, id: Date.now() };
+
+    // 2. Duplicate questions
+    const duplicatedQuestions = [];
+    for (const q of target.questions) {
+      const newQPayload = {
+        ...q,
+        id: 0,
+        packageId: finalPkg.id,
+        package_id: finalPkg.id,
+        question_type: q.questionType,
+        type_label: q.typeLabel,
+        options: q.options.map((o) => ({ ...o, id: Date.now() + Math.floor(Math.random() * 10000) })),
+      };
+
+      const savedQGolang = await createQuestionInGolang(newQPayload);
+      const finalQ = savedQGolang || await createQuestionInSupabase(newQPayload) || { ...newQPayload, id: Date.now() + Math.floor(Math.random() * 10000) };
+      duplicatedQuestions.push(finalQ);
+    }
+
+    finalPkg.questions = duplicatedQuestions;
+
+    // 3. Update React state
+    setPackages((prev) => [finalPkg, ...prev]);
     alert(`Paket soal "${target.name}" berhasil diduplikat!`);
   };
 
   // Delete Package
-  const handleDeletePackage = (pkgId: number, pkgName: string) => {
+  const handleDeletePackage = async (pkgId: number, pkgName: string) => {
     if (confirm(`Apakah Anda yakin ingin menghapus paket soal "${pkgName}"?`)) {
+      const success = await deletePackageInGolang(pkgId);
+      if (!success) {
+        await deletePackageInSupabase(pkgId);
+      }
       setPackages((prev) => prev.filter((p) => p.id !== pkgId));
     }
   };
@@ -1000,8 +1076,9 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
 
   // Delete Class
   const handleDeleteClass = (id: number) => {
-    if (window.confirm('Apakah Anda yakin ingin menghapus kelas ini?')) {
+    if (window.confirm('Apakah Anda yakin ingin menghapus kelas ini? Data juga akan terhapus dari database.')) {
       setClasses((prev) => prev.filter((c) => c.id !== id));
+      deleteClassFromSupabase(id);
     }
   };
 
@@ -1099,8 +1176,9 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
 
   // Delete Staff
   const handleDeleteStaff = (id: number) => {
-    if (window.confirm('Apakah Anda yakin ingin menghapus data staff/guru ini?')) {
+    if (window.confirm('Apakah Anda yakin ingin menghapus data staff/guru ini? Data juga akan terhapus dari database.')) {
       setStaff((prev) => prev.filter((s) => s.id !== id));
+      deleteStaffFromSupabase(id);
     }
   };
 
@@ -1257,8 +1335,12 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   };
 
   // Delete individual question item
-  const handleDeleteQuestionItem = (pkgId: number, qId: number) => {
+  const handleDeleteQuestionItem = async (pkgId: number, qId: number) => {
     if (confirm('Apakah Anda yakin ingin menghapus butir soal ini?')) {
+      const success = await deleteQuestionInGolang(qId);
+      if (!success) {
+        await deleteQuestionInSupabase(qId);
+      }
       setPackages((prev) =>
         prev.map((pkg) => {
           if (pkg.id !== pkgId) return pkg;
@@ -1272,7 +1354,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   };
 
   // Save (Add or Edit) Question Item
-  const handleSaveQuestion = () => {
+  const handleSaveQuestion = async () => {
     if (!questionContent.trim()) {
       alert('Isi pertanyaan soal tidak boleh kosong!');
       return;
@@ -1297,7 +1379,25 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
         : (opt.isCorrect ? (opt.points !== undefined && opt.points !== null ? opt.points : 10) : 0),
     }));
 
+    const questionPayload = {
+      packageId: selectedPkgId,
+      package_id: selectedPkgId,
+      questionType: questionType,
+      question_type: questionType,
+      typeLabel: typeLabelStr,
+      type_label: typeLabelStr,
+      content: questionContent,
+      discussion: '',
+      pointsDefault: 10,
+      points_default: 10,
+      options: updatedOptions,
+    };
+
     if (editingQuestionId) {
+      const successGolang = await updateQuestionInGolang(editingQuestionId, questionPayload);
+      if (!successGolang) {
+        await updateQuestionInSupabase(editingQuestionId, questionPayload);
+      }
       setPackages((prev) =>
         prev.map((pkg) => {
           if (pkg.id !== selectedPkgId) return pkg;
@@ -1307,11 +1407,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
               q.id === editingQuestionId
                 ? {
                   ...q,
-                  questionType,
-                  typeLabel: typeLabelStr,
-                  content: questionContent,
-                  discussion: '',
-                  options: updatedOptions,
+                  ...questionPayload,
                 }
                 : q
             ),
@@ -1320,20 +1416,17 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       );
       alert('Butir soal berhasil diperbarui!');
     } else {
-      const newQ: QuestionItem = {
-        id: Date.now(),
-        packageId: selectedPkgId,
-        questionType,
-        typeLabel: typeLabelStr,
-        content: questionContent,
-        discussion: '',
-        pointsDefault: 10,
-        options: updatedOptions,
+      const newQ: any = {
+        id: Date.now(), // Fallback ID
+        ...questionPayload,
       };
+
+      const savedQGolang = await createQuestionInGolang(newQ);
+      const finalQ = savedQGolang || await createQuestionInSupabase(newQ) || newQ;
 
       setPackages((prev) =>
         prev.map((pkg) =>
-          pkg.id === selectedPkgId ? { ...pkg, questions: [...pkg.questions, newQ] } : pkg
+          pkg.id === selectedPkgId ? { ...pkg, questions: [...pkg.questions, finalQ] } : pkg
         )
       );
       alert('Butir soal baru berhasil disimpan!');
@@ -1359,17 +1452,38 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   };
 
   // Add Announcement
-  const handleAddAnno = (e: React.FormEvent) => {
+  const handleAddAnno = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newAnno.title || !newAnno.content) return;
+
+    const payload = {
+      title: newAnno.title,
+      content: newAnno.content,
+      target: newAnno.target,
+      date: new Date().toLocaleDateString('id-ID'),
+      authorName: 'Admin Utama',
+    };
+
+    const savedGolang = await createAnnouncementInGolang(payload);
+    let finalAnno = savedGolang;
+
+    if (!finalAnno) {
+      const dbPayload = {
+        ...payload,
+        id: Date.now()
+      };
+      await upsertAnnouncementToSupabase(dbPayload);
+      finalAnno = dbPayload;
+    }
+
     setAnnouncements((prev) => [
       {
-        id: Date.now(),
-        authorName: 'Admin Utama',
-        title: newAnno.title,
-        content: newAnno.content,
-        target: newAnno.target,
-        date: new Date().toLocaleDateString('id-ID'),
+        id: finalAnno.id || Date.now(),
+        authorName: finalAnno.author || finalAnno.authorName || 'Admin Utama',
+        title: finalAnno.title || payload.title,
+        content: finalAnno.content || payload.content,
+        target: finalAnno.target_class || finalAnno.target || payload.target,
+        date: finalAnno.date || payload.date,
       },
       ...prev,
     ]);
@@ -1429,7 +1543,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                   Kiosk Lock: <span className="text-emerald-400 font-bold">Terproteksi 100%</span>
                 </p>
                 <button
-                  onClick={onOpenPrint}
+                  onClick={() => onOpenPrint({ type: 'beritaAcara' })}
                   className="bg-blue-600 hover:bg-blue-500 text-white text-xs px-4 py-2 rounded-xl font-bold flex items-center gap-1.5 transition shadow-sm"
                 >
                   <Printer className="w-3.5 h-3.5 text-blue-200" />
@@ -1622,7 +1736,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
-                  {students.map((st, idx) => {
+                  {[...students].reverse().slice(0, 10).map((st, idx) => {
                     const sess = sessions.find((s) => s.studentId === st.id);
                     return (
                       <tr key={st.id} className="hover:bg-slate-50/80 transition">
@@ -2999,7 +3113,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                                   <KaTeXRenderer content={opt.optionText} inline />
                                   {opt.isCorrect && (
                                     <span className="ml-auto text-[10px] bg-emerald-600 text-white font-extrabold px-2 py-0.5 rounded-md shrink-0">
-                                      {q.questionType === 'graded_choice' ? `Kunci Utama (+${opt.points})` : q.questionType === 'true_false' ? `Kunci Benar (+${opt.points})` : `Kunci (+${opt.points})`}
+                                      {q.questionType === 'graded_choice' ? `Kunci Utama (+${opt.points})` : q.questionType === 'true_false' ? `Jawaban: Benar (+${opt.points})` : `Kunci (+${opt.points})`}
                                     </span>
                                   )}
                                   {!opt.isCorrect && q.questionType === 'graded_choice' && opt.points !== undefined && (
@@ -3008,8 +3122,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                                     </span>
                                   )}
                                   {!opt.isCorrect && q.questionType === 'true_false' && opt.points !== undefined && (
-                                    <span className="ml-auto text-[10px] bg-red-600 text-white font-extrabold px-2 py-0.5 rounded-md shrink-0">
-                                      Kunci Salah (+{opt.points})
+                                    <span className="ml-auto text-[10px] bg-blue-600 text-white font-extrabold px-2 py-0.5 rounded-md shrink-0">
+                                      Jawaban: Salah (+{opt.points})
                                     </span>
                                   )}
                                 </div>
@@ -3152,46 +3266,51 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                           </div>
                         </div>
 
-                        {/* 4 Opsi Tombol Aksi: Input Soal, Edit Soal, Duplikat Soal, Hapus Soal */}
+                        {/* Opsi Tombol Aksi: Input Soal, Edit Soal, Duplikat Soal, Print Soal, Hapus Soal */}
                         <div className="flex flex-wrap items-center gap-2 self-start md:self-center">
-                          {/* 1. Input Soal -> Mengarahkan ke halaman baru review seluruh butir soal */}
                           <button
                             onClick={() => setSelectedReviewPkgId(pkg.id)}
                             className="bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs px-3.5 py-2 rounded-xl flex items-center gap-1.5 shadow-sm transition"
                             title="Masuk ke halaman review seluruh butir soal"
                           >
                             <FileText className="w-3.5 h-3.5" />
-                            <span>Input Soal</span>
+                            <span>Input</span>
                           </button>
 
-                          {/* 2. Edit Soal -> Mengedit nama soal, kelas, urutan, durasi */}
                           <button
                             onClick={() => handleOpenEditPackage(pkg)}
                             className="bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-300 font-bold text-xs px-3.5 py-2 rounded-xl flex items-center gap-1.5 transition"
                             title="Edit nama soal, kelas, urutan, dan durasi"
                           >
                             <Edit className="w-3.5 h-3.5 text-amber-700" />
-                            <span>Edit Soal</span>
+                            <span>Edit</span>
                           </button>
 
-                          {/* 3. Duplikat Soal */}
                           <button
                             onClick={() => handleDuplicatePackage(pkg.id)}
                             className="bg-slate-100 hover:bg-slate-200 text-slate-800 border border-slate-300 font-bold text-xs px-3.5 py-2 rounded-xl flex items-center gap-1.5 transition"
                             title="Duplikat paket soal ini"
                           >
                             <Copy className="w-3.5 h-3.5 text-slate-600" />
-                            <span>Duplikat Soal</span>
+                            <span>Duplikat</span>
                           </button>
 
-                          {/* 4. Hapus Soal */}
+                          <button
+                            onClick={() => onOpenPrint({ type: 'package', pkg })}
+                            className="bg-purple-50 hover:bg-purple-100 text-purple-700 border border-purple-200 font-bold text-xs px-3.5 py-2 rounded-xl flex items-center gap-1.5 transition"
+                            title="Print soal ini (PDF)"
+                          >
+                            <Printer className="w-3.5 h-3.5 text-purple-600" />
+                            <span>Print</span>
+                          </button>
+
                           <button
                             onClick={() => handleDeletePackage(pkg.id, pkg.name)}
                             className="bg-red-50 hover:bg-red-100 text-red-700 border border-red-200 font-bold text-xs px-3.5 py-2 rounded-xl flex items-center gap-1.5 transition"
                             title="Hapus paket soal ini"
                           >
                             <Trash2 className="w-3.5 h-3.5 text-red-600" />
-                            <span>Hapus Soal</span>
+                            <span>Hapus</span>
                           </button>
                         </div>
                       </div>
@@ -3542,7 +3661,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100 font-medium text-xs">
-                      {(statusPageSize === 'all' ? sessions : sessions.slice(0, statusPageSize)).map((s, idx) => {
+                      {(statusPageSize === 'all' ? [...sessions].reverse() : [...sessions].reverse().slice(0, statusPageSize)).map((s, idx) => {
                         const tryout = tryouts.find(t => t.id === s.tryoutId);
                         const pkg = tryout ? packages.find(p => p.id === tryout.packageId) : null;
                         const totalQuestions = pkg?.questions?.length || 30;
@@ -4074,15 +4193,32 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                             </span>
                           </td>
                           <td className="py-3 px-3 text-center">
-                            <button
-                              onClick={() => handleToggleReview(row.id!, !!row.show_review)}
-                              className={`font-extrabold text-[10px] px-2.5 py-1 rounded shadow-sm transition ${row.show_review
-                                ? 'bg-red-100 text-red-700 hover:bg-red-200 border border-red-200'
-                                : 'bg-blue-100 text-blue-700 hover:bg-blue-200 border border-blue-200'
-                                }`}
-                            >
-                              {row.show_review ? 'Nonaktif Nilai' : 'Review Nilai'}
-                            </button>
+                            <div className="flex flex-col sm:flex-row justify-center items-center gap-1.5">
+                              <button
+                                onClick={() => handleToggleReview(row.id!, !!row.show_review)}
+                                className={`font-extrabold text-[10px] px-2.5 py-1 rounded shadow-sm transition ${row.show_review
+                                  ? 'bg-red-100 text-red-700 hover:bg-red-200 border border-red-200'
+                                  : 'bg-blue-100 text-blue-700 hover:bg-blue-200 border border-blue-200'
+                                  }`}
+                              >
+                                {row.show_review ? 'Nonaktif Nilai' : 'Review Nilai'}
+                              </button>
+                              <button
+                                onClick={() => {
+                                  const reviewPackage = packages.find(p => p.name === row.tryoutTitle);
+                                  if (reviewPackage) {
+                                    onOpenPrint({ type: 'examResult', score: row, reviewPackage });
+                                  } else {
+                                    alert("Paket soal untuk nilai ini tidak ditemukan.");
+                                  }
+                                }}
+                                className="bg-indigo-100 text-indigo-700 hover:bg-indigo-200 border border-indigo-200 font-extrabold text-[10px] px-2.5 py-1 rounded flex items-center gap-1 shadow-sm transition"
+                                title="Download Nilai (PDF)"
+                              >
+                                <Printer className="w-3 h-3" />
+                                <span>Download</span>
+                              </button>
+                            </div>
                           </td>
                         </tr>
                       ))}
@@ -4122,6 +4258,13 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                     <h4 className="font-bold text-slate-900 text-base mt-1">{anno.title}</h4>
                     <p className="text-xs text-slate-500">Oleh: {anno.authorName} • {anno.date}</p>
                   </div>
+                  <button
+                    onClick={() => handleDeleteAnnouncement(anno.id)}
+                    className="p-1.5 text-red-600 hover:text-red-800 hover:bg-red-50 rounded-lg text-xs font-bold transition flex items-center gap-1 shrink-0"
+                    title="Hapus Pengumuman"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
                 </div>
                 <p className="text-xs text-slate-700 mt-2 leading-relaxed">{anno.content}</p>
               </div>
@@ -5627,11 +5770,11 @@ ON CONFLICT (id) DO UPDATE SET
 
               <div>
                 <label className="block text-xs font-bold text-slate-700 mb-1">
-                  Pilih Kelas Ujian (Bisa pilih lebih dari satu, misal: 9A, 9B, 9C)
+                  Pilih Kelas Ujian (Bisa pilih lebih dari satu)
                 </label>
                 <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl space-y-2">
                   <div className="flex flex-wrap gap-2">
-                    {['9A', '9B', '9C', '12 IPA 1', '12 IPA 2', '12 IPS 1', ...classes.map((c) => c.name)]
+                    {classes.map((c) => c.name)
                       .filter((v, i, a) => a.indexOf(v) === i)
                       .map((cName) => {
                         const isChecked = pkgClasses.includes(cName);

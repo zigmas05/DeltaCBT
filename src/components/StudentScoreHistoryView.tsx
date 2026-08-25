@@ -43,10 +43,10 @@ export const StudentScoreHistoryView: React.FC<StudentScoreHistoryViewProps> = (
 
   const reviewPackage = selectedScore
     ? packages.find((p) =>
-        selectedTryoutItem
-          ? p.id === selectedTryoutItem.packageId
-          : p.subjectName.toLowerCase() === selectedScore.subjectName.toLowerCase()
-      ) || packages[0]
+      selectedTryoutItem
+        ? p.id === selectedTryoutItem.packageId
+        : p.subjectName.toLowerCase() === selectedScore.subjectName.toLowerCase()
+    ) || packages[0]
     : null;
 
   return (
@@ -116,8 +116,14 @@ export const StudentScoreHistoryView: React.FC<StudentScoreHistoryViewProps> = (
 
               <div className="flex items-center gap-4 w-full sm:w-auto justify-between sm:justify-end border-t sm:border-t-0 pt-3 sm:pt-0 border-slate-100">
                 <div className="bg-slate-50 border border-slate-200 px-5 py-2.5 rounded-2xl text-center shadow-2xs">
-                  <span className="font-black text-2xl text-blue-900 tracking-tight">{sc.finalScore}</span>
-                  <span className="text-[10px] text-slate-400 block font-bold uppercase">Nilai Poin</span>
+                  {sc.show_review ? (
+                    <>
+                      <span className="font-black text-2xl text-blue-900 tracking-tight">{sc.finalScore}</span>
+                      <span className="text-[10px] text-slate-400 block font-bold uppercase">Nilai Poin</span>
+                    </>
+                  ) : (
+                    <span className="text-xs font-bold text-slate-500 block">Nilai Masuk,<br />Menunggu Ditampilkan</span>
+                  )}
                 </div>
 
                 {sc.show_review && (
@@ -227,7 +233,7 @@ export const StudentScoreHistoryView: React.FC<StudentScoreHistoryViewProps> = (
                         <p className="text-[11px] font-extrabold text-slate-500 uppercase tracking-wider">
                           Pilihan Jawaban & Kunci:
                         </p>
-                        
+
                         {(() => {
                           const studentAnswer = selectedScore?.answers?.find((a: any) => a.questionId === q.id);
                           const selectedOptionIds = studentAnswer?.selectedOptionIds || [];
@@ -240,11 +246,11 @@ export const StudentScoreHistoryView: React.FC<StudentScoreHistoryViewProps> = (
                                   const isKeyBenar = Boolean(opt.isCorrect);
                                   const studentTf = tfAnswers[opt.id];
                                   const isMatch = (isKeyBenar && studentTf === 'benar') || (!isKeyBenar && studentTf === 'salah');
-                                  
+
                                   return (
                                     <div key={opt.id} className="p-3 rounded-2xl border text-xs flex items-center justify-between gap-3 bg-white border-slate-200">
                                       <span><KaTeXRenderer content={opt.optionText} inline /></span>
-                                      
+
                                       {studentTf ? (
                                         <span className={`px-3 py-1 rounded-lg font-bold text-[10px] uppercase shrink-0 ${isMatch ? 'bg-orange-100 text-orange-700 border border-orange-300' : 'bg-red-100 text-red-700 border border-red-300'}`}>
                                           Jawaban: {studentTf}
@@ -257,11 +263,22 @@ export const StudentScoreHistoryView: React.FC<StudentScoreHistoryViewProps> = (
                                     </div>
                                   );
                                 })}
-                                <div className="mt-3 p-3 bg-blue-50 border border-blue-200 rounded-xl text-xs flex items-center gap-2 text-blue-900 font-bold">
-                                  <CheckCircle2 className="w-4 h-4 text-blue-600 shrink-0" />
-                                  <span>
-                                    Kunci Jawaban: {q.options.map(o => Boolean(o.isCorrect) ? 'Benar' : 'Salah').join(', ')}
-                                  </span>
+                                <div className="mt-3 flex flex-col sm:flex-row gap-3">
+                                  <div className="flex-1 p-3 bg-blue-50 border border-blue-200 rounded-xl text-xs flex items-center gap-2 text-blue-900 font-bold">
+                                    <CheckCircle2 className="w-4 h-4 text-blue-600 shrink-0" />
+                                    <span>
+                                      Kunci Jawaban Resmi: {q.options.map(o => Boolean(o.isCorrect) ? 'Benar' : 'Salah').join(', ')}
+                                    </span>
+                                  </div>
+                                  <div className="flex-1 p-3 bg-slate-50 border border-slate-200 rounded-xl text-xs flex items-center gap-2 text-slate-700 font-bold">
+                                    <span>
+                                      Jawaban Anda: {
+                                        Object.keys(tfAnswers).length > 0 
+                                          ? q.options.map(o => tfAnswers[o.id] ? (tfAnswers[o.id] === 'benar' ? 'Benar' : 'Salah') : '-').join(', ')
+                                          : 'Tidak Dijawab'
+                                      }
+                                    </span>
+                                  </div>
                                 </div>
                               </div>
                             );
@@ -297,16 +314,26 @@ export const StudentScoreHistoryView: React.FC<StudentScoreHistoryViewProps> = (
                                   </div>
                                 );
                               })}
-                              
-                              <div className="mt-3 p-3 bg-blue-50 border border-blue-200 rounded-xl text-xs flex items-center gap-2 text-blue-900 font-bold">
-                                <CheckCircle2 className="w-4 h-4 text-blue-600 shrink-0" />
-                                <span>
-                                  Kunci Jawaban:{' '}
-                                  {q.questionType === 'graded_choice'
-                                    ? (q.options.slice().sort((a, b) => (Number(b.points) || 0) - (Number(a.points) || 0))[0]?.label || '-')
-                                    : q.options.filter(o => o.isCorrect).map(o => o.label).join(' dan ')}
-                                </span>
-                              </div>
+
+                                <div className="mt-3 flex flex-col sm:flex-row gap-3">
+                                  <div className="flex-1 p-3 bg-blue-50 border border-blue-200 rounded-xl text-xs flex items-center gap-2 text-blue-900 font-bold">
+                                    <CheckCircle2 className="w-4 h-4 text-blue-600 shrink-0" />
+                                    <span>
+                                      Kunci Jawaban Resmi:{' '}
+                                      {q.questionType === 'graded_choice'
+                                        ? (q.options.slice().sort((a, b) => (Number(b.points) || 0) - (Number(a.points) || 0))[0]?.label || '-')
+                                        : q.options.filter(o => o.isCorrect).map(o => o.label).join(' dan ')}
+                                    </span>
+                                  </div>
+                                  <div className={`flex-1 p-3 border rounded-xl text-xs flex items-center gap-2 font-bold ${selectedOptionIds.length > 0 ? (selectedOptionIds.some(id => q.options.find(o => o.id === id)?.isCorrect) ? 'bg-emerald-50 border-emerald-200 text-emerald-900' : 'bg-rose-50 border-rose-200 text-rose-900') : 'bg-slate-50 border-slate-200 text-slate-700'}`}>
+                                    <span>
+                                      Jawaban Anda:{' '}
+                                      {selectedOptionIds.length > 0
+                                        ? selectedOptionIds.map(id => q.options.find(o => o.id === id)?.label).join(', ')
+                                        : 'Tidak Dijawab'}
+                                    </span>
+                                  </div>
+                                </div>
                             </div>
                           );
                         })()}

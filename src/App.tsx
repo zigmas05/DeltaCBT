@@ -44,13 +44,13 @@ import {
   ExamSession,
   AnnouncementItem,
   ExamScoreRecord,
-
+  PrintState
 } from './types';
 const defaultSettings: Settings = {
-  bimbelName: 'Bimbel Anda',
-  ownerName: 'Admin',
-  address: 'Alamat Bimbel',
-  phone: '08xxxxxx',
+  bimbelName: 'HIPO',
+  ownerName: 'Load Data...',
+  address: ' ',
+  phone: ' ',
 };
 
 import { TopHeader } from './components/TopHeader';
@@ -62,6 +62,8 @@ import { SesiTryOutView } from './components/SesiTryOutView';
 import { StudentScoreHistoryView } from './components/StudentScoreHistoryView';
 import { StudentCBTExam } from './components/StudentCBTExam';
 import { PrintableBeritaAcara } from './components/PrintableBeritaAcara';
+import { PrintableQuestionPackage } from './components/PrintableQuestionPackage';
+import { PrintableExamResult } from './components/PrintableExamResult';
 import { LoginPage } from './components/LoginPage';
 import 'katex/dist/katex.css';
 
@@ -109,7 +111,7 @@ export default function App() {
   // App Global State
   const [isLoggedIn, setIsLoggedIn] = useState<boolean>(() => readSessionState('tryout_is_logged_in', false));
   const [loginPortal, setLoginPortal] = useState<'siswa' | 'staff'>(() => (isPanelPath() ? 'staff' : 'siswa'));
-  const [currentRole, setCurrentRole] = useState<UserRole>(() => readSessionState('tryout_current_role', 'admin'));
+  const [currentRole, setCurrentRole] = useState<UserRole | null>(() => readSessionState('tryout_current_role', null));
 
   useEffect(() => {
     window.sessionStorage.setItem('tryout_is_logged_in', JSON.stringify(isLoggedIn));
@@ -220,8 +222,8 @@ export default function App() {
             id: anno.id,
             title: anno.title,
             content: anno.content,
-            target: anno.target_class,
-            authorName: anno.author,
+            target: (!anno.target || anno.target === 'Semua Kelas' || anno.target === 'all') ? 'all' : anno.target,
+            authorName: anno.author_name || 'Admin',
             date: anno.date,
           })));
         }
@@ -232,7 +234,7 @@ export default function App() {
         }
         if (sbSettings) {
           setSettings({
-            bimbelName: sbSettings.bimbel_name || 'Bimbel Champion Academy',
+            bimbelName: sbSettings.bimbel_name || 'Hipotenusa',
             ownerName: sbSettings.owner_name || '',
             address: sbSettings.address || '',
             phone: sbSettings.phone || '',
@@ -372,7 +374,7 @@ export default function App() {
   const [activeExamTryout, setActiveExamTryout] = useState<TryoutItem | null>(null);
 
   // Printable View toggle
-  const [showPrintView, setShowPrintView] = useState<boolean>(false);
+  const [printState, setPrintState] = useState<PrintState>(null);
 
   // Logout Modal and Toast state
   const [showLogoutModal, setShowLogoutModal] = useState<boolean>(false);
@@ -389,7 +391,7 @@ export default function App() {
     setLoginPortal(targetPortal);
     setIsLoggedIn(false);
     setCurrentUser(null);
-    
+
     window.sessionStorage.removeItem('tryout_current_user');
     window.sessionStorage.removeItem('tryout_is_logged_in');
     window.sessionStorage.removeItem('tryout_current_role');
@@ -550,14 +552,35 @@ export default function App() {
     setFinishedExamMessage('Ujian sudah Selesai atau Ujian Sudah Diselesaikan Admin dan Nilaimu Sudah Masuk.');
   };
 
-  if (showPrintView) {
-    return (
-      <PrintableBeritaAcara
-        settings={settings}
-        sessions={sessions}
-        onClose={() => setShowPrintView(false)}
-      />
-    );
+  if (printState) {
+    if (printState.type === 'beritaAcara') {
+      return (
+        <PrintableBeritaAcara
+          settings={settings}
+          sessions={sessions}
+          onClose={() => setPrintState(null)}
+        />
+      );
+    }
+    if (printState.type === 'package') {
+      return (
+        <PrintableQuestionPackage
+          settings={settings}
+          pkg={printState.pkg}
+          onClose={() => setPrintState(null)}
+        />
+      );
+    }
+    if (printState.type === 'examResult') {
+      return (
+        <PrintableExamResult
+          settings={settings}
+          score={printState.score}
+          reviewPackage={printState.reviewPackage}
+          onClose={() => setPrintState(null)}
+        />
+      );
+    }
   }
 
   if (finishedExamMessage) {
@@ -614,7 +637,7 @@ export default function App() {
   }
 
   // Login Page View when user is logged out
-  if (!isLoggedIn) {
+  if (!isLoggedIn || !currentRole) {
     return (
       <LoginPage
         settings={settings}
@@ -643,11 +666,11 @@ export default function App() {
     <div className="min-h-screen bg-slate-100 flex flex-col font-sans text-slate-800 antialiased">
       {/* Top Header */}
       <TopHeader
-        currentRole={currentRole}
+        currentRole={currentRole as UserRole}
         settings={settings}
         currentToken={currentToken}
         onRefreshToken={handleRefreshToken}
-        onPrintBeritaAcara={() => setShowPrintView(true)}
+        onPrintBeritaAcara={() => setPrintState({ type: 'beritaAcara' })}
         onLogout={() => setShowLogoutModal(true)}
       />
 
@@ -722,7 +745,7 @@ export default function App() {
                 setScores={handleSetScores}
                 currentToken={currentToken}
                 onRefreshToken={handleRefreshToken}
-                onOpenPrint={() => setShowPrintView(true)}
+                onOpenPrint={setPrintState}
                 activeTab={adminTab}
                 setActiveTab={setAdminTab}
               />

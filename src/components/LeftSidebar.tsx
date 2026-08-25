@@ -45,7 +45,7 @@ export const LeftSidebar: React.FC<LeftSidebarProps> = ({
     } else if (currentRole === 'guru') {
       return [
         { id: 'dashboard', label: 'Dashboard Guru', icon: Layers },
-        { id: 'soal', label: 'Input / Bank Soal', icon: BookOpen },
+        { id: 'soal', label: 'Input Soal', icon: BookOpen },
         { id: 'siswa', label: 'Data Siswa Bimbel', icon: Users },
         { id: 'hasil', label: 'Hasil Ujian Siswa', icon: Award },
       ];
@@ -118,28 +118,25 @@ export const LeftSidebar: React.FC<LeftSidebarProps> = ({
               <button
                 key={item.id}
                 onClick={() => setActiveTab(item.id)}
-                className={`flex items-center justify-between p-3 rounded-2xl text-xs font-bold transition-all shrink-0 md:shrink-1 w-auto md:w-full snap-start ${
-                  isActive
+                className={`flex items-center justify-between p-3 rounded-2xl text-xs font-bold transition-all shrink-0 md:shrink-1 w-auto md:w-full snap-start ${isActive
                     ? currentRole === 'siswa'
                       ? 'bg-orange-600 text-white shadow-lg shadow-orange-600/30 border border-orange-400/30'
                       : currentRole === 'guru'
-                      ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-600/30 border border-indigo-400/30'
-                      : 'bg-blue-600 text-white shadow-lg shadow-blue-600/30 border border-blue-400/30'
+                        ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-600/30 border border-indigo-400/30'
+                        : 'bg-blue-600 text-white shadow-lg shadow-blue-600/30 border border-blue-400/30'
                     : 'text-slate-300 hover:bg-slate-800 hover:text-white border border-transparent'
-                }`}
+                  }`}
               >
                 <div className="flex items-center gap-3">
                   <ItemIcon
-                    className={`w-4 h-4 ${
-                      isActive ? 'text-white' : 'text-slate-400 group-hover:text-white'
-                    }`}
+                    className={`w-4 h-4 ${isActive ? 'text-white' : 'text-slate-400 group-hover:text-white'
+                      }`}
                   />
                   <span>{item.label}</span>
                 </div>
                 <ChevronRight
-                  className={`w-3.5 h-3.5 transition-transform ${
-                    isActive ? 'opacity-100 translate-x-0.5' : 'opacity-30'
-                  }`}
+                  className={`w-3.5 h-3.5 transition-transform ${isActive ? 'opacity-100 translate-x-0.5' : 'opacity-30'
+                    }`}
                 />
               </button>
             );

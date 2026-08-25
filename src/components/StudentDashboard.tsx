@@ -27,9 +27,9 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
   announcements,
   scores,
 }) => {
-  // Filter scores for current student ONLY (no dummy/fallback)
+  // Filter scores for current student ONLY and where show_review is true
   const studentScores = scores.filter(
-    (s) => s.studentNis === currentStudent.nis
+    (s) => s.studentNis === currentStudent.nis && s.show_review
   );
   // Hanya tampilkan data nyata
   const displayScores = studentScores;
@@ -332,7 +332,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
             </div>
 
             <div className="space-y-3 max-h-[300px] overflow-y-auto pr-1">
-              {announcements.map((anno) => (
+              {announcements.filter(a => a.target === 'siswa' || a.target === 'all').map((anno) => (
                 <div
                   key={anno.id}
                   className="p-4 bg-slate-50 rounded-2xl border border-slate-200/80 space-y-1.5 hover:bg-slate-100/60 transition"

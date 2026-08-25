@@ -1,5 +1,13 @@
 import React, { useState } from 'react';
 import {
+  createQuestionInGolang,
+  updateQuestionInGolang,
+  createQuestionInSupabase,
+  updateQuestionInSupabase,
+  deleteQuestionInGolang,
+  deleteQuestionInSupabase
+} from '../lib/supabaseService';
+import {
   StaffUser,
   StudentUser,
   QuestionPackage,
@@ -65,14 +73,25 @@ export const TeacherPanel: React.FC<TeacherPanelProps> = ({
     setLocalActiveTab(tab);
   };
 
-  // Currently logged in teacher (Drs. Budi Santoso)
-  const teacherPackages = packages.filter((p) => p.teacherId === 2 || p.teacherName.includes('Budi'));
+  // Currently logged in teacher
+  const teacherPackages = currentUser
+    ? packages.filter((p) => p.teacherId === currentUser.id)
+    : [];
 
   // Question Editor State
   const [isQuestionEditorPage, setIsQuestionEditorPage] = useState<boolean>(false);
   const [selectedPkgId, setSelectedPkgId] = useState<number | null>(null);
   const [selectedSubjectPkgId, setSelectedSubjectPkgId] = useState<number | null>(null);
   const [editingQuestionId, setEditingQuestionId] = useState<number | null>(null);
+
+  // Pagination & Search States
+  const [siswaSearchTerm, setSiswaSearchTerm] = useState('');
+  const [siswaItemsPerPage, setSiswaItemsPerPage] = useState<number>(10);
+  const [siswaCurrentPage, setSiswaCurrentPage] = useState<number>(1);
+
+  const [hasilSearchTerm, setHasilSearchTerm] = useState('');
+  const [hasilItemsPerPage, setHasilItemsPerPage] = useState<number>(10);
+  const [hasilCurrentPage, setHasilCurrentPage] = useState<number>(1);
 
   const [questionType, setQuestionType] = useState<QuestionType>('single_choice');
   const [questionContent, setQuestionContent] = useState<string>('');
@@ -219,8 +238,12 @@ export const TeacherPanel: React.FC<TeacherPanelProps> = ({
   };
 
   // Delete individual question item
-  const handleDeleteQuestionItem = (pkgId: number, qId: number) => {
+  const handleDeleteQuestionItem = async (pkgId: number, qId: number) => {
     if (confirm('Apakah Anda yakin ingin menghapus butir soal ini?')) {
+      const success = await deleteQuestionInGolang(qId);
+      if (!success) {
+        await deleteQuestionInSupabase(qId);
+      }
       setPackages((prev) =>
         prev.map((pkg) => {
           if (pkg.id !== pkgId) return pkg;
@@ -253,7 +276,7 @@ export const TeacherPanel: React.FC<TeacherPanelProps> = ({
   };
 
   // Save (Add or Edit) Question Item
-  const handleSaveQuestion = () => {
+  const handleSaveQuestion = async () => {
     if (!questionContent.trim()) {
       alert('Isi pertanyaan soal tidak boleh kosong!');
       return;
@@ -263,10 +286,10 @@ export const TeacherPanel: React.FC<TeacherPanelProps> = ({
       questionType === 'single_choice'
         ? 'Pilihan Ganda'
         : questionType === 'complex_choice'
-        ? 'PG Kompleks'
-        : questionType === 'graded_choice'
-        ? 'PG Bertingkat'
-        : 'Benar / Salah';
+          ? 'PG Kompleks'
+          : questionType === 'graded_choice'
+            ? 'PG Bertingkat'
+            : 'Benar / Salah';
 
     const updatedOptions = optionsState.map((opt, idx) => ({
       id: Date.now() + idx,
@@ -278,7 +301,25 @@ export const TeacherPanel: React.FC<TeacherPanelProps> = ({
         : (opt.isCorrect ? (opt.points !== undefined && opt.points !== null ? opt.points : 10) : 0),
     }));
 
+    const questionPayload = {
+      packageId: selectedPkgId!,
+      package_id: selectedPkgId!,
+      questionType: questionType,
+      question_type: questionType,
+      typeLabel: typeLabelStr,
+      type_label: typeLabelStr,
+      content: questionContent,
+      discussion: '',
+      pointsDefault: 10,
+      points_default: 10,
+      options: updatedOptions,
+    };
+
     if (editingQuestionId) {
+      const successGolang = await updateQuestionInGolang(editingQuestionId, questionPayload);
+      if (!successGolang) {
+        await updateQuestionInSupabase(editingQuestionId, questionPayload);
+      }
       setPackages((prev) =>
         prev.map((pkg) => {
           if (pkg.id !== selectedPkgId) return pkg;
@@ -287,44 +328,42 @@ export const TeacherPanel: React.FC<TeacherPanelProps> = ({
             questions: pkg.questions.map((q) =>
               q.id === editingQuestionId
                 ? {
-                    ...q,
-                    questionType,
-                    typeLabel: typeLabelStr,
-                    content: questionContent,
-                    discussion: '',
-                    options: updatedOptions,
-                  }
+                  ...q,
+                  ...questionPayload,
+                }
                 : q
             ),
           };
         })
       );
     } else {
-      const newQuestion: QuestionItem = {
-        id: Date.now(),
-        packageId: selectedPkgId!,
-        questionType,
-        typeLabel: typeLabelStr,
-        content: questionContent,
-        discussion: '',
-        pointsDefault: 10,
-        options: updatedOptions,
+      const newQuestion: any = {
+        id: Date.now(), // Fallback ID
+        ...questionPayload,
       };
 
+      const savedQGolang = await createQuestionInGolang(newQuestion);
+      const finalQ = savedQGolang || await createQuestionInSupabase(newQuestion) || newQuestion;
+
       setPackages((prev) =>
-        prev.map((pkg) => {
-          if (pkg.id !== selectedPkgId) return pkg;
-          return {
-            ...pkg,
-            questions: [...pkg.questions, newQuestion],
-          };
-        })
+        prev.map((pkg) =>
+          pkg.id === selectedPkgId ? { ...pkg, questions: [...pkg.questions, finalQ] } : pkg
+        )
       );
     }
 
-    setIsQuestionEditorPage(false);
-    setSelectedPkgId(null);
+    // Reset state after saving
+    setQuestionContent('');
+    setQuestionType('single_choice');
+    setOptionsState([
+      { label: 'A', text: '', isCorrect: true, points: 10 },
+      { label: 'B', text: '', isCorrect: false, points: 0 },
+      { label: 'C', text: '', isCorrect: false, points: 0 },
+      { label: 'D', text: '', isCorrect: false, points: 0 },
+      { label: 'E', text: '', isCorrect: false, points: 0 },
+    ]);
     setEditingQuestionId(null);
+    setIsQuestionEditorPage(false);
   };
 
   // Formatting helpers for text editor
@@ -509,13 +548,12 @@ export const TeacherPanel: React.FC<TeacherPanelProps> = ({
                       type="button"
                       disabled={Boolean(editingQuestionId)}
                       onClick={() => !editingQuestionId && handleQuestionTypeChange(t.id as QuestionType)}
-                      className={`py-2 px-2 rounded-xl text-xs font-extrabold text-center border transition ${
-                        questionType === t.id
-                          ? 'bg-blue-600 text-white border-blue-600 shadow-xs'
-                          : Boolean(editingQuestionId)
-                            ? 'bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed opacity-60'
-                            : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-100'
-                      }`}
+                      className={`py-2 px-2 rounded-xl text-xs font-extrabold text-center border transition ${questionType === t.id
+                        ? 'bg-blue-600 text-white border-blue-600 shadow-xs'
+                        : Boolean(editingQuestionId)
+                          ? 'bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed opacity-60'
+                          : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-100'
+                        }`}
                     >
                       {t.label}
                     </button>
@@ -539,22 +577,20 @@ export const TeacherPanel: React.FC<TeacherPanelProps> = ({
                       <button
                         type="button"
                         onClick={() => handleSetOptionCount(3)}
-                        className={`flex-1 py-1.5 rounded-lg text-xs font-bold transition text-center ${
-                          optionsState.length === 3
-                            ? 'bg-blue-600 text-white shadow-xs'
-                            : 'text-slate-600 hover:text-slate-900'
-                        }`}
+                        className={`flex-1 py-1.5 rounded-lg text-xs font-bold transition text-center ${optionsState.length === 3
+                          ? 'bg-blue-600 text-white shadow-xs'
+                          : 'text-slate-600 hover:text-slate-900'
+                          }`}
                       >
                         3 Pernyataan
                       </button>
                       <button
                         type="button"
                         onClick={() => handleSetOptionCount(4)}
-                        className={`flex-1 py-1.5 rounded-lg text-xs font-bold transition text-center ${
-                          optionsState.length === 4
-                            ? 'bg-blue-600 text-white shadow-xs'
-                            : 'text-slate-600 hover:text-slate-900'
-                        }`}
+                        className={`flex-1 py-1.5 rounded-lg text-xs font-bold transition text-center ${optionsState.length === 4
+                          ? 'bg-blue-600 text-white shadow-xs'
+                          : 'text-slate-600 hover:text-slate-900'
+                          }`}
                       >
                         4 Pernyataan
                       </button>
@@ -564,22 +600,20 @@ export const TeacherPanel: React.FC<TeacherPanelProps> = ({
                       <button
                         type="button"
                         onClick={() => handleSetOptionCount(4)}
-                        className={`flex-1 py-1.5 rounded-lg text-xs font-bold transition text-center ${
-                          optionsState.length === 4
-                            ? 'bg-blue-600 text-white shadow-xs'
-                            : 'text-slate-600 hover:text-slate-900'
-                        }`}
+                        className={`flex-1 py-1.5 rounded-lg text-xs font-bold transition text-center ${optionsState.length === 4
+                          ? 'bg-blue-600 text-white shadow-xs'
+                          : 'text-slate-600 hover:text-slate-900'
+                          }`}
                       >
                         4 Opsi
                       </button>
                       <button
                         type="button"
                         onClick={() => handleSetOptionCount(5)}
-                        className={`flex-1 py-1.5 rounded-lg text-xs font-bold transition text-center ${
-                          optionsState.length === 5
-                            ? 'bg-blue-600 text-white shadow-xs'
-                            : 'text-slate-600 hover:text-slate-900'
-                        }`}
+                        className={`flex-1 py-1.5 rounded-lg text-xs font-bold transition text-center ${optionsState.length === 5
+                          ? 'bg-blue-600 text-white shadow-xs'
+                          : 'text-slate-600 hover:text-slate-900'
+                          }`}
                       >
                         5 Opsi
                       </button>
@@ -594,8 +628,8 @@ export const TeacherPanel: React.FC<TeacherPanelProps> = ({
                   {questionType === 'true_false'
                     ? 'Input Pernyataan & Kunci Benar/Salah:'
                     : questionType === 'graded_choice'
-                    ? 'Input Opsi Jawaban & Skor Poin Bertingkat:'
-                    : 'Input Opsi Jawaban & Tentukan Kunci Jawaban:'}
+                      ? 'Input Opsi Jawaban & Skor Poin Bertingkat:'
+                      : 'Input Opsi Jawaban & Tentukan Kunci Jawaban:'}
                 </label>
 
                 {questionType === 'single_choice' && (
@@ -608,9 +642,8 @@ export const TeacherPanel: React.FC<TeacherPanelProps> = ({
                         <div className="flex flex-wrap items-center justify-between gap-2">
                           <div className="flex items-center gap-2">
                             <div
-                              className={`w-7 h-7 rounded-full flex items-center justify-center font-black text-xs shrink-0 ${
-                                opt.isCorrect ? 'bg-emerald-600 text-white shadow-xs' : 'bg-slate-200 text-slate-700'
-                              }`}
+                              className={`w-7 h-7 rounded-full flex items-center justify-center font-black text-xs shrink-0 ${opt.isCorrect ? 'bg-emerald-600 text-white shadow-xs' : 'bg-slate-200 text-slate-700'
+                                }`}
                             >
                               {opt.label}
                             </div>
@@ -671,11 +704,10 @@ export const TeacherPanel: React.FC<TeacherPanelProps> = ({
 
                             {/* Flag Kunci Radio */}
                             <label
-                              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-[11px] font-bold cursor-pointer transition shrink-0 ${
-                                opt.isCorrect
-                                  ? 'bg-emerald-600 text-white border-emerald-600 shadow-xs'
-                                  : 'bg-white text-slate-600 border-slate-300 hover:bg-slate-100'
-                              }`}
+                              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-[11px] font-bold cursor-pointer transition shrink-0 ${opt.isCorrect
+                                ? 'bg-emerald-600 text-white border-emerald-600 shadow-xs'
+                                : 'bg-white text-slate-600 border-slate-300 hover:bg-slate-100'
+                                }`}
                             >
                               <input
                                 type="radio"
@@ -753,9 +785,8 @@ export const TeacherPanel: React.FC<TeacherPanelProps> = ({
                         <div className="flex flex-wrap items-center justify-between gap-2">
                           <div className="flex items-center gap-2">
                             <div
-                              className={`w-7 h-7 rounded-full flex items-center justify-center font-black text-xs shrink-0 ${
-                                opt.isCorrect ? 'bg-purple-600 text-white shadow-xs' : 'bg-slate-200 text-slate-700'
-                              }`}
+                              className={`w-7 h-7 rounded-full flex items-center justify-center font-black text-xs shrink-0 ${opt.isCorrect ? 'bg-purple-600 text-white shadow-xs' : 'bg-slate-200 text-slate-700'
+                                }`}
                             >
                               {opt.label}
                             </div>
@@ -808,11 +839,10 @@ export const TeacherPanel: React.FC<TeacherPanelProps> = ({
 
                             {/* Checkbox Kunci */}
                             <label
-                              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-[11px] font-bold cursor-pointer transition shrink-0 ${
-                                opt.isCorrect
-                                  ? 'bg-purple-600 text-white border-purple-600 shadow-xs'
-                                  : 'bg-white text-slate-600 border-slate-300 hover:bg-slate-100'
-                              }`}
+                              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-[11px] font-bold cursor-pointer transition shrink-0 ${opt.isCorrect
+                                ? 'bg-purple-600 text-white border-purple-600 shadow-xs'
+                                : 'bg-white text-slate-600 border-slate-300 hover:bg-slate-100'
+                                }`}
                             >
                               <input
                                 type="checkbox"
@@ -823,10 +853,10 @@ export const TeacherPanel: React.FC<TeacherPanelProps> = ({
                                     prev.map((o, i) =>
                                       i === idx
                                         ? {
-                                            ...o,
-                                            isCorrect: checked,
-                                            points: checked ? (o.points && o.points > 0 ? o.points : 10) : 0,
-                                          }
+                                          ...o,
+                                          isCorrect: checked,
+                                          points: checked ? (o.points && o.points > 0 ? o.points : 10) : 0,
+                                        }
                                         : o
                                     )
                                   );
@@ -944,11 +974,10 @@ export const TeacherPanel: React.FC<TeacherPanelProps> = ({
 
                             {/* Flag Kunci Utama Radio */}
                             <label
-                              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-[11px] font-bold cursor-pointer transition shrink-0 ${
-                                opt.isCorrect
-                                  ? 'bg-indigo-600 text-white border-indigo-600 shadow-xs'
-                                  : 'bg-white text-slate-600 border-slate-300 hover:bg-slate-100'
-                              }`}
+                              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-[11px] font-bold cursor-pointer transition shrink-0 ${opt.isCorrect
+                                ? 'bg-indigo-600 text-white border-indigo-600 shadow-xs'
+                                : 'bg-white text-slate-600 border-slate-300 hover:bg-slate-100'
+                                }`}
                             >
                               <input
                                 type="radio"
@@ -1165,15 +1194,15 @@ export const TeacherPanel: React.FC<TeacherPanelProps> = ({
     );
   }
 
-return (
+  return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
-      
+
       {/* ========================================================================= */}
       {/* BAGIAN HEADER (BIRU & PUTIH) - DIATUR AGAR HANYA MUNCUL DI DASHBOARD saja */}
       {/* ========================================================================= */}
       {activeTab === 'dashboard' && (
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 sm:gap-5">
-          
+
           {/* Bento Tile 1: Profile & Subject Banner (Kartu Biru) */}
           <div className="md:col-span-2 bg-gradient-to-br from-slate-900 via-indigo-950 to-blue-950 text-white p-6 sm:p-7 rounded-3xl border border-slate-800 shadow-xl flex flex-col justify-between relative overflow-hidden group">
             <div className="space-y-3 relative z-10">
@@ -1231,7 +1260,7 @@ return (
               <span>Pengumuman Terbaru Admin</span>
             </h3>
             <div className="space-y-3">
-              {announcements.map((anno) => (
+              {announcements.filter(a => a.target === 'guru' || a.target === 'all').map((anno) => (
                 <div key={anno.id} className="p-4 bg-slate-50/80 rounded-2xl border border-slate-200/80 space-y-1 hover:bg-slate-100/60 transition">
                   <div className="flex justify-between items-center">
                     <span className="text-[10px] bg-blue-100 text-blue-800 font-extrabold px-2 py-0.5 rounded-full">
@@ -1326,10 +1355,8 @@ return (
                         </div>
 
                         <div>
-                          <h4 className="font-black text-slate-900 text-base group-hover:text-blue-600 transition">
-                            {pkg.subjectName}
-                          </h4>
-                          <p className="text-xs font-bold text-slate-600 mt-0.5">{pkg.name}</p>
+                          <h5 className="font-black text-slate-900 text-base group-hover:text-blue-600 transition"> {pkg.name} </h5>
+                          <h2 className="text-xs font-bold text-slate-600 mt-0.5"> {pkg.subjectName} </h2>
                         </div>
 
                         <div className="p-3 bg-slate-50 rounded-2xl border border-slate-100 text-xs text-slate-500 space-y-1">
@@ -1496,13 +1523,12 @@ return (
                             {q.options.map((opt) => (
                               <div
                                 key={opt.id}
-                                className={`p-2.5 rounded-xl border text-xs flex items-center gap-2 ${
-                                  opt.isCorrect
-                                    ? 'bg-emerald-50 border-emerald-300 text-emerald-950 font-semibold'
-                                    : q.questionType === 'graded_choice' && opt.points && opt.points > 0
+                                className={`p-2.5 rounded-xl border text-xs flex items-center gap-2 ${opt.isCorrect
+                                  ? 'bg-emerald-50 border-emerald-300 text-emerald-950 font-semibold'
+                                  : q.questionType === 'graded_choice' && opt.points && opt.points > 0
                                     ? 'bg-indigo-50/70 border-indigo-200 text-indigo-950 font-medium'
                                     : 'bg-white border-slate-200 text-slate-700'
-                                }`}
+                                  }`}
                               >
                                 <span className="font-extrabold w-5 shrink-0 text-slate-500">{opt.label}.</span>
                                 <KaTeXRenderer content={opt.optionText} inline />
@@ -1545,84 +1571,238 @@ return (
 
       {/* Tab Siswa (View Only) */}
       {activeTab === 'siswa' && (
-        <div className="bg-white rounded-3xl border border-slate-200 shadow-sm p-6 space-y-4">
-          <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-            <h3 className="font-extrabold text-slate-900 text-lg flex items-center gap-2">
-              <Users className="w-5 h-5 text-blue-600" />
-              <span>Data Siswa Bimbel (Mode Lihat)</span>
-            </h3>
-            <span className="text-xs font-bold text-slate-500">{students.length} Siswa Terdaftar</span>
-          </div>
+        (() => {
+          const filteredStudents = students.filter(
+            (st) =>
+              st.name.toLowerCase().includes(siswaSearchTerm.toLowerCase()) ||
+              st.nis.toLowerCase().includes(siswaSearchTerm.toLowerCase())
+          );
+          const totalPages = Math.ceil(filteredStudents.length / siswaItemsPerPage);
+          const startIndex = (siswaCurrentPage - 1) * siswaItemsPerPage;
+          const currentStudents = filteredStudents.slice(startIndex, startIndex + siswaItemsPerPage);
 
-          <div className="overflow-x-auto border border-slate-200 rounded-2xl">
-            <table className="w-full text-left text-xs">
-              <thead className="bg-slate-50 border-b border-slate-200 text-slate-600 font-extrabold uppercase">
-                <tr>
-                  <th className="p-3.5">NIS</th>
-                  <th className="p-3.5">Nama Siswa</th>
-                  <th className="p-3.5">Kelas</th>
-                  <th className="p-3.5">Status</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100 font-medium">
-                {students.map((st) => (
-                  <tr key={st.id} className="hover:bg-slate-50/80 transition">
-                    <td className="p-3.5 font-mono font-bold text-blue-700">{st.nis}</td>
-                    <td className="p-3.5 font-bold text-slate-900">{st.name}</td>
-                    <td className="p-3.5 text-slate-600">{st.className}</td>
-                    <td className="p-3.5">
-                      <span className="bg-emerald-100 text-emerald-800 text-[10px] font-black px-2 py-0.5 rounded-full uppercase">
-                        Aktif
-                      </span>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
+          return (
+            <div className="bg-white rounded-3xl border border-slate-200 shadow-sm p-6 space-y-4">
+              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between border-b border-slate-100 pb-3 gap-3">
+                <h3 className="font-extrabold text-slate-900 text-lg flex items-center gap-2">
+                  <Users className="w-5 h-5 text-blue-600" />
+                  <span>Data Siswa Bimbel (Mode Lihat)</span>
+                </h3>
+                <span className="text-xs font-bold text-slate-500">{students.length} Siswa Terdaftar</span>
+              </div>
+
+              {/* Controls: Search and Pagination Limit */}
+              <div className="flex flex-wrap items-center justify-between gap-3 bg-slate-50 p-3 rounded-2xl border border-slate-200">
+                <input
+                  type="text"
+                  placeholder="Cari nama atau NIS siswa..."
+                  value={siswaSearchTerm}
+                  onChange={(e) => {
+                    setSiswaSearchTerm(e.target.value);
+                    setSiswaCurrentPage(1); // reset to page 1 on search
+                  }}
+                  className="px-4 py-2 border border-slate-300 rounded-xl text-xs font-medium w-full sm:w-64 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+                <div className="flex items-center gap-2 text-xs font-medium text-slate-600">
+                  <span>Tampilkan:</span>
+                  <select
+                    value={siswaItemsPerPage}
+                    onChange={(e) => {
+                      setSiswaItemsPerPage(Number(e.target.value));
+                      setSiswaCurrentPage(1);
+                    }}
+                    className="border border-slate-300 rounded-xl px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  >
+                    <option value={10}>10</option>
+                    <option value={25}>25</option>
+                    <option value={50}>50</option>
+                    <option value={100}>100</option>
+                  </select>
+                  <span>Data</span>
+                </div>
+              </div>
+
+              <div className="overflow-x-auto border border-slate-200 rounded-2xl">
+                <table className="w-full text-left text-xs">
+                  <thead className="bg-slate-50 border-b border-slate-200 text-slate-600 font-extrabold uppercase">
+                    <tr>
+                      <th className="p-3.5">NIS</th>
+                      <th className="p-3.5">Nama Siswa</th>
+                      <th className="p-3.5">Kelas</th>
+                      <th className="p-3.5">Status</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 font-medium">
+                    {currentStudents.length > 0 ? (
+                      currentStudents.map((st) => (
+                        <tr key={st.id} className="hover:bg-slate-50/80 transition">
+                          <td className="p-3.5 font-mono font-bold text-blue-700">{st.nis}</td>
+                          <td className="p-3.5 font-bold text-slate-900">{st.name}</td>
+                          <td className="p-3.5 text-slate-600">{st.className}</td>
+                          <td className="p-3.5">
+                            <span className="bg-emerald-100 text-emerald-800 text-[10px] font-black px-2 py-0.5 rounded-full uppercase">
+                              Aktif
+                            </span>
+                          </td>
+                        </tr>
+                      ))
+                    ) : (
+                      <tr>
+                        <td colSpan={4} className="p-5 text-center text-slate-500 font-medium">
+                          Tidak ada siswa yang ditemukan.
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Pagination Controls */}
+              {totalPages > 1 && (
+                <div className="flex items-center justify-between pt-3">
+                  <span className="text-xs text-slate-500 font-medium">
+                    Halaman {siswaCurrentPage} dari {totalPages}
+                  </span>
+                  <div className="flex items-center gap-1">
+                    <button
+                      onClick={() => setSiswaCurrentPage((prev) => Math.max(prev - 1, 1))}
+                      disabled={siswaCurrentPage === 1}
+                      className="px-3 py-1.5 border border-slate-200 rounded-lg text-xs font-bold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                    >
+                      Sebelumnya
+                    </button>
+                    <button
+                      onClick={() => setSiswaCurrentPage((prev) => Math.min(prev + 1, totalPages))}
+                      disabled={siswaCurrentPage === totalPages}
+                      className="px-3 py-1.5 border border-slate-200 rounded-lg text-xs font-bold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                    >
+                      Selanjutnya
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          );
+        })()
       )}
 
       {/* Tab Hasil */}
       {activeTab === 'hasil' && (
-        <div className="bg-white rounded-3xl border border-slate-200 shadow-sm p-6 space-y-4">
-          <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-            <h3 className="font-extrabold text-slate-900 text-lg flex items-center gap-2">
-              <Award className="w-5 h-5 text-emerald-600" />
-              <span>Hasil Try Out CBT Siswa</span>
-            </h3>
-            <span className="text-xs font-bold text-slate-500">{scores.length} Data Rekap</span>
-          </div>
+        (() => {
+          const filteredScores = scores.filter(
+            (sc) =>
+              sc.studentName.toLowerCase().includes(hasilSearchTerm.toLowerCase()) ||
+              sc.tryoutTitle.toLowerCase().includes(hasilSearchTerm.toLowerCase())
+          );
+          const totalPages = Math.ceil(filteredScores.length / hasilItemsPerPage);
+          const startIndex = (hasilCurrentPage - 1) * hasilItemsPerPage;
+          const currentScores = filteredScores.slice(startIndex, startIndex + hasilItemsPerPage);
 
-          <div className="overflow-x-auto border border-slate-200 rounded-2xl">
-            <table className="w-full text-left text-xs">
-              <thead className="bg-slate-50 border-b border-slate-200 text-slate-600 font-extrabold uppercase">
-                <tr>
-                  <th className="p-3.5">Nama Siswa</th>
-                  <th className="p-3.5">Kelas</th>
-                  <th className="p-3.5">Try Out</th>
-                  <th className="p-3.5">Tanggal</th>
-                  <th className="p-3.5 text-right">Nilai Akhir</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100 font-medium">
-                {scores.map((sc) => (
-                  <tr key={sc.id} className="hover:bg-slate-50/80 transition">
-                    <td className="p-3.5 font-bold text-slate-900">{sc.studentName}</td>
-                    <td className="p-3.5 text-slate-600">{sc.className}</td>
-                    <td className="p-3.5 text-slate-600">{sc.tryoutTitle}</td>
-                    <td className="p-3.5 text-slate-400">{sc.date}</td>
-                    <td className="p-3.5 text-right font-black text-blue-900 text-sm">
-                      <span className="bg-blue-50 border border-blue-200 text-blue-900 px-3 py-1 rounded-xl">
-                        {sc.finalScore} Poin
-                      </span>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
+          return (
+            <div className="bg-white rounded-3xl border border-slate-200 shadow-sm p-6 space-y-4">
+              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between border-b border-slate-100 pb-3 gap-3">
+                <h3 className="font-extrabold text-slate-900 text-lg flex items-center gap-2">
+                  <Award className="w-5 h-5 text-emerald-600" />
+                  <span>Hasil Try Out CBT Siswa</span>
+                </h3>
+                <span className="text-xs font-bold text-slate-500">{scores.length} Data Rekap</span>
+              </div>
+
+              {/* Controls: Search and Pagination Limit */}
+              <div className="flex flex-wrap items-center justify-between gap-3 bg-slate-50 p-3 rounded-2xl border border-slate-200">
+                <input
+                  type="text"
+                  placeholder="Cari nama siswa atau judul try out..."
+                  value={hasilSearchTerm}
+                  onChange={(e) => {
+                    setHasilSearchTerm(e.target.value);
+                    setHasilCurrentPage(1); // reset to page 1 on search
+                  }}
+                  className="px-4 py-2 border border-slate-300 rounded-xl text-xs font-medium w-full sm:w-72 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                />
+                <div className="flex items-center gap-2 text-xs font-medium text-slate-600">
+                  <span>Tampilkan:</span>
+                  <select
+                    value={hasilItemsPerPage}
+                    onChange={(e) => {
+                      setHasilItemsPerPage(Number(e.target.value));
+                      setHasilCurrentPage(1);
+                    }}
+                    className="border border-slate-300 rounded-xl px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  >
+                    <option value={10}>10</option>
+                    <option value={25}>25</option>
+                    <option value={50}>50</option>
+                    <option value={100}>100</option>
+                  </select>
+                  <span>Data</span>
+                </div>
+              </div>
+
+              <div className="overflow-x-auto border border-slate-200 rounded-2xl">
+                <table className="w-full text-left text-xs">
+                  <thead className="bg-slate-50 border-b border-slate-200 text-slate-600 font-extrabold uppercase">
+                    <tr>
+                      <th className="p-3.5">Nama Siswa</th>
+                      <th className="p-3.5">Kelas</th>
+                      <th className="p-3.5">Try Out</th>
+                      <th className="p-3.5">Tanggal</th>
+                      <th className="p-3.5 text-right">Nilai Akhir</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 font-medium">
+                    {currentScores.length > 0 ? (
+                      currentScores.map((sc) => (
+                        <tr key={sc.id} className="hover:bg-slate-50/80 transition">
+                          <td className="p-3.5 font-bold text-slate-900">{sc.studentName}</td>
+                          <td className="p-3.5 text-slate-600">{sc.className}</td>
+                          <td className="p-3.5 text-slate-600">{sc.tryoutTitle}</td>
+                          <td className="p-3.5 text-slate-400">{sc.date}</td>
+                          <td className="p-3.5 text-right font-black text-blue-900 text-sm">
+                            <span className="bg-blue-50 border border-blue-200 text-blue-900 px-3 py-1 rounded-xl">
+                              {sc.finalScore} Poin
+                            </span>
+                          </td>
+                        </tr>
+                      ))
+                    ) : (
+                      <tr>
+                        <td colSpan={5} className="p-5 text-center text-slate-500 font-medium">
+                          Tidak ada hasil ujian yang ditemukan.
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Pagination Controls */}
+              {totalPages > 1 && (
+                <div className="flex items-center justify-between pt-3">
+                  <span className="text-xs text-slate-500 font-medium">
+                    Halaman {hasilCurrentPage} dari {totalPages}
+                  </span>
+                  <div className="flex items-center gap-1">
+                    <button
+                      onClick={() => setHasilCurrentPage((prev) => Math.max(prev - 1, 1))}
+                      disabled={hasilCurrentPage === 1}
+                      className="px-3 py-1.5 border border-slate-200 rounded-lg text-xs font-bold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                    >
+                      Sebelumnya
+                    </button>
+                    <button
+                      onClick={() => setHasilCurrentPage((prev) => Math.min(prev + 1, totalPages))}
+                      disabled={hasilCurrentPage === totalPages}
+                      className="px-3 py-1.5 border border-slate-200 rounded-lg text-xs font-bold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                    >
+                      Selanjutnya
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          );
+        })()
       )}
     </div>
   );
