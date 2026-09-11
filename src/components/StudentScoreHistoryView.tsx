@@ -273,7 +273,7 @@ export const StudentScoreHistoryView: React.FC<StudentScoreHistoryViewProps> = (
                                   <div className="flex-1 p-3 bg-slate-50 border border-slate-200 rounded-xl text-xs flex items-center gap-2 text-slate-700 font-bold">
                                     <span>
                                       Jawaban Anda: {
-                                        Object.keys(tfAnswers).length > 0 
+                                        Object.keys(tfAnswers).length > 0
                                           ? q.options.map(o => tfAnswers[o.id] ? (tfAnswers[o.id] === 'benar' ? 'Benar' : 'Salah') : '-').join(', ')
                                           : 'Tidak Dijawab'
                                       }
@@ -315,25 +315,25 @@ export const StudentScoreHistoryView: React.FC<StudentScoreHistoryViewProps> = (
                                 );
                               })}
 
-                                <div className="mt-3 flex flex-col sm:flex-row gap-3">
-                                  <div className="flex-1 p-3 bg-blue-50 border border-blue-200 rounded-xl text-xs flex items-center gap-2 text-blue-900 font-bold">
-                                    <CheckCircle2 className="w-4 h-4 text-blue-600 shrink-0" />
-                                    <span>
-                                      Kunci Jawaban Resmi:{' '}
-                                      {q.questionType === 'graded_choice'
-                                        ? (q.options.slice().sort((a, b) => (Number(b.points) || 0) - (Number(a.points) || 0))[0]?.label || '-')
-                                        : q.options.filter(o => o.isCorrect).map(o => o.label).join(' dan ')}
-                                    </span>
-                                  </div>
-                                  <div className={`flex-1 p-3 border rounded-xl text-xs flex items-center gap-2 font-bold ${selectedOptionIds.length > 0 ? (selectedOptionIds.some(id => q.options.find(o => o.id === id)?.isCorrect) ? 'bg-emerald-50 border-emerald-200 text-emerald-900' : 'bg-rose-50 border-rose-200 text-rose-900') : 'bg-slate-50 border-slate-200 text-slate-700'}`}>
-                                    <span>
-                                      Jawaban Anda:{' '}
-                                      {selectedOptionIds.length > 0
-                                        ? selectedOptionIds.map(id => q.options.find(o => o.id === id)?.label).join(', ')
-                                        : 'Tidak Dijawab'}
-                                    </span>
-                                  </div>
+                              <div className="mt-3 flex flex-col sm:flex-row gap-3">
+                                <div className="flex-1 p-3 bg-blue-50 border border-blue-200 rounded-xl text-xs flex items-center gap-2 text-blue-900 font-bold">
+                                  <CheckCircle2 className="w-4 h-4 text-blue-600 shrink-0" />
+                                  <span>
+                                    Kunci Jawaban Resmi:{' '}
+                                    {q.questionType === 'graded_choice'
+                                      ? (q.options.slice().sort((a, b) => (Number(b.points) || 0) - (Number(a.points) || 0))[0]?.label || '-')
+                                      : q.options.filter(o => o.isCorrect).map(o => o.label).join(' dan ')}
+                                  </span>
                                 </div>
+                                <div className={`flex-1 p-3 border rounded-xl text-xs flex items-center gap-2 font-bold ${selectedOptionIds.length > 0 ? (selectedOptionIds.some(id => q.options.find(o => o.id === id)?.isCorrect) ? 'bg-emerald-50 border-emerald-200 text-emerald-900' : 'bg-rose-50 border-rose-200 text-rose-900') : 'bg-slate-50 border-slate-200 text-slate-700'}`}>
+                                  <span>
+                                    Jawaban Anda:{' '}
+                                    {selectedOptionIds.length > 0
+                                      ? selectedOptionIds.map(id => q.options.find(o => o.id === id)?.label).join(', ')
+                                      : 'Tidak Dijawab'}
+                                  </span>
+                                </div>
+                              </div>
                             </div>
                           );
                         })()}

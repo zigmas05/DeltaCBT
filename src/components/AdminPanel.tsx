@@ -32,6 +32,7 @@ import {
   createAnnouncementInGolang,
   upsertAnnouncementToSupabase
 } from '../lib/supabaseService';
+import { supabase } from '../lib/supabase';
 import { calculateTotalExamScore } from '../lib/scoreCalculator';
 import {
   ClassItem,
@@ -180,6 +181,22 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     'dashboard' | 'master' | 'soal' | 'tryout' | 'hasil' | 'pengumuman' | 'inspeksi_api' | 'pengaturan'
   >('dashboard');
 
+  // Supabase Realtime Receiver for Live Monitoring
+  useEffect(() => {
+    const channel = supabase.channel('exam_monitoring')
+      .on('broadcast', { event: 'student_progress' }, (payload) => {
+        const { sessionId, answeredCount } = payload.payload;
+        setSessions((prev) =>
+          prev.map((s) => s.id === sessionId ? { ...s, answeredCount } : s)
+        );
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [setSessions]);
+
   const activeTab = (activeTabProp || localActiveTab) as
     | 'dashboard'
     | 'master'
@@ -252,6 +269,10 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
 
   // Sub-tabs for Manajemen Try Out
   const [tryoutSubTab, setTryoutSubTab] = useState<'aktivasi' | 'status' | 'reset'>('aktivasi');
+
+  const [pkgSearchQuery, setPkgSearchQuery] = useState('');
+  const [pkgItemsPerPage, setPkgItemsPerPage] = useState<number>(5);
+  const [pkgCurrentPage, setPkgCurrentPage] = useState<number>(1);
 
   // 20-minute automatic token refresh countdown timer (1200 seconds)
   const [tokenTimer, setTokenTimer] = useState<number>(1200);
@@ -398,9 +419,6 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       isActive: true,
       allowedClassNames: pkg.classes && pkg.classes.length > 0 ? pkg.classes : ['12 IPA 1'],
     };
-
-    setTryouts((prev) => [newTryout, ...prev]);
-
     // Save to Supabase
     await upsertTryoutToSupabase({
       id: newTryout.id,
@@ -3001,7 +3019,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                       </button>
                     </div>
 
-                    <div className="flex justify-between items-center text-xs text-slate-600">
+                    <div className="flex flex-col md:flex-row md:justify-between items-start md:items-center text-xs text-slate-600 gap-3">
                       <span>Total Butir Soal Terdaftar: <strong className="text-blue-900 text-sm">{reviewPkg.questions.length} Soal</strong> | Total Skor Maksimal: <strong className="text-blue-900 text-sm">{
                         reviewPkg.questions.reduce((total, q) => {
                           if (q.questionType === 'single_choice') {
@@ -3023,7 +3041,20 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                           return total;
                         }, 0)
                       } Poin</strong></span>
-                      <span className="text-slate-400">Mendukung Pilihan Ganda Biasa, Kompleks & Benar/Salah</span>
+                      <div className="flex flex-wrap gap-2 text-[10px] sm:text-[11px] mt-2 md:mt-0">
+                        <span className="bg-emerald-50 text-emerald-700 px-2.5 py-1 rounded-md font-bold border border-emerald-100">
+                          PG Biasa: {reviewPkg.questions.filter(q => q.questionType === 'single_choice').length}
+                        </span>
+                        <span className="bg-purple-50 text-purple-700 px-2.5 py-1 rounded-md font-bold border border-purple-100">
+                          PG Kompleks: {reviewPkg.questions.filter(q => q.questionType === 'complex_choice').length}
+                        </span>
+                        <span className="bg-amber-50 text-amber-700 px-2.5 py-1 rounded-md font-bold border border-amber-100">
+                          Benar/Salah: {reviewPkg.questions.filter(q => q.questionType === 'true_false').length}
+                        </span>
+                        <span className="bg-indigo-50 text-indigo-700 px-2.5 py-1 rounded-md font-bold border border-indigo-100">
+                          PG Bertingkat: {reviewPkg.questions.filter(q => q.questionType === 'graded_choice').length}
+                        </span>
+                      </div>
                     </div>
                   </div>
 
@@ -3225,96 +3256,170 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                       Daftar soal terdaftar. Klik 'Input Soal' pada soal pilihan Anda untuk mereview & mengedit butir-butir soal.
                     </p>
                   </div>
-                  <button
-                    onClick={handleOpenCreatePackage}
-                    className="bg-blue-600 hover:bg-blue-700 text-white font-extrabold text-xs px-4 py-2.5 rounded-xl flex items-center gap-2 shadow-md shadow-blue-500/20 transition"
-                  >
-                    <Plus className="w-4 h-4" />
-                    <span> Tambah Soal Baru</span>
-                  </button>
+                  <div className="flex flex-col sm:flex-row items-center gap-3 w-full sm:w-auto mt-3 sm:mt-0">
+                    <div className="relative w-full sm:w-48">
+                      <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                      <input
+                        type="text"
+                        placeholder="Cari nama soal..."
+                        value={pkgSearchQuery}
+                        onChange={(e) => {
+                          setPkgSearchQuery(e.target.value);
+                          setPkgCurrentPage(1);
+                        }}
+                        className="pl-9 pr-3 py-2 text-xs border border-slate-300 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none w-full"
+                      />
+                    </div>
+                    <select
+                      value={pkgItemsPerPage}
+                      onChange={(e) => {
+                        setPkgItemsPerPage(Number(e.target.value));
+                        setPkgCurrentPage(1);
+                      }}
+                      className="text-xs border border-slate-300 rounded-xl px-3 py-2 outline-none focus:ring-2 focus:ring-blue-500 bg-white w-full sm:w-auto cursor-pointer"
+                    >
+                      <option value={5}>5 Baris</option>
+                      <option value={15}>15 Baris</option>
+                    </select>
+
+                    <button
+                      onClick={handleOpenCreatePackage}
+                      className="bg-blue-600 hover:bg-blue-700 text-white font-extrabold text-xs px-4 py-2.5 rounded-xl flex items-center justify-center gap-2 shadow-md shadow-blue-500/20 transition w-full sm:w-auto whitespace-nowrap"
+                    >
+                      <Plus className="w-4 h-4" />
+                      <span> Tambah Soal Baru</span>
+                    </button>
+                  </div>
                 </div>
 
                 <div className="space-y-4">
-                  {packages
-                    .filter((pkg) => selectedSubjectId === 'all' || pkg.subjectId === selectedSubjectId)
-                    .map((pkg) => (
-                      <div
-                        key={pkg.id}
-                        className="p-5 border border-slate-200 rounded-2xl bg-white space-y-3 shadow-xs hover:border-slate-300 transition flex flex-col md:flex-row justify-between items-start md:items-center gap-4"
-                      >
-                        <div className="space-y-1.5 max-w-xl">
-                          <div className="flex flex-wrap items-center gap-2">
-                            <span className="text-[11px] bg-blue-600 text-white font-mono font-extrabold px-2.5 py-0.5 rounded-md">
-                              KD: {pkg.code}
+                  {(() => {
+                    const filteredPkgs = packages
+                      .filter((pkg) => selectedSubjectId === 'all' || pkg.subjectId === selectedSubjectId)
+                      .filter((pkg) =>
+                        pkg.name.toLowerCase().includes(pkgSearchQuery.toLowerCase()) ||
+                        pkg.code.toLowerCase().includes(pkgSearchQuery.toLowerCase()) ||
+                        pkg.subjectName.toLowerCase().includes(pkgSearchQuery.toLowerCase())
+                      );
+
+                    const totalPages = Math.ceil(filteredPkgs.length / pkgItemsPerPage) || 1;
+                    const paginatedPkgs = filteredPkgs.slice(
+                      (pkgCurrentPage - 1) * pkgItemsPerPage,
+                      pkgCurrentPage * pkgItemsPerPage
+                    );
+
+                    return (
+                      <>
+                        {paginatedPkgs.length === 0 ? (
+                          <div className="text-center py-8 text-slate-500 text-sm font-medium">Tidak ada soal yang ditemukan.</div>
+                        ) : (
+                          paginatedPkgs.map((pkg) => (
+                            <div
+                              key={pkg.id}
+                              className="p-5 border border-slate-200 rounded-2xl bg-white space-y-3 shadow-xs hover:border-slate-300 transition flex flex-col md:flex-row justify-between items-start md:items-center gap-4"
+                            >
+                              <div className="space-y-1.5 max-w-xl">
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <span className="text-[11px] bg-blue-600 text-white font-mono font-extrabold px-2.5 py-0.5 rounded-md">
+                                    KD: {pkg.code}
+                                  </span>
+                                  <span className="text-[11px] bg-indigo-50 text-indigo-700 border border-indigo-200 font-bold px-2.5 py-0.5 rounded-md">
+                                    Mapel: {pkg.subjectName}
+                                  </span>
+                                  <span className="text-[11px] bg-slate-100 text-slate-700 font-bold px-2.5 py-0.5 rounded-md">
+                                    {pkg.questions.length} Butir Soal
+                                  </span>
+                                </div>
+
+                                <h4 className="font-extrabold text-slate-900 text-base">{pkg.name}</h4>
+
+                                <div className="flex flex-wrap items-center gap-3 text-xs text-slate-600">
+                                  <span><strong>Guru ID:</strong> {pkg.teacherName} ({pkg.teacherId})</span>
+                                  <span>•</span>
+                                  <span><strong>Kelas Target:</strong> {pkg.classes?.join(', ') || 'Semua Kelas'}</span>
+                                  <span>•</span>
+                                  <span><strong>Durasi:</strong> {pkg.durationMinutes || 90} Menit</span>
+                                </div>
+                              </div>
+
+                              {/* Opsi Tombol Aksi: Input Soal, Edit Soal, Duplikat Soal, Print Soal, Hapus Soal */}
+                              <div className="flex flex-wrap items-center gap-2 self-start md:self-center">
+                                <button
+                                  onClick={() => setSelectedReviewPkgId(pkg.id)}
+                                  className="bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs px-3.5 py-2 rounded-xl flex items-center gap-1.5 shadow-sm transition"
+                                  title="Masuk ke halaman review seluruh butir soal"
+                                >
+                                  <FileText className="w-3.5 h-3.5" />
+                                  <span>Input</span>
+                                </button>
+
+                                <button
+                                  onClick={() => handleOpenEditPackage(pkg)}
+                                  className="bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-300 font-bold text-xs px-3.5 py-2 rounded-xl flex items-center gap-1.5 transition"
+                                  title="Edit nama soal, kelas, urutan, dan durasi"
+                                >
+                                  <Edit className="w-3.5 h-3.5 text-amber-700" />
+                                  <span>Edit</span>
+                                </button>
+
+                                <button
+                                  onClick={() => handleDuplicatePackage(pkg.id)}
+                                  className="bg-slate-100 hover:bg-slate-200 text-slate-800 border border-slate-300 font-bold text-xs px-3.5 py-2 rounded-xl flex items-center gap-1.5 transition"
+                                  title="Duplikat paket soal ini"
+                                >
+                                  <Copy className="w-3.5 h-3.5 text-slate-600" />
+                                  <span>Duplikat</span>
+                                </button>
+
+                                <button
+                                  onClick={() => onOpenPrint({ type: 'package', pkg })}
+                                  className="bg-purple-50 hover:bg-purple-100 text-purple-700 border border-purple-200 font-bold text-xs px-3.5 py-2 rounded-xl flex items-center gap-1.5 transition"
+                                  title="Print soal ini (PDF)"
+                                >
+                                  <Printer className="w-3.5 h-3.5 text-purple-600" />
+                                  <span>Print</span>
+                                </button>
+
+                                <button
+                                  onClick={() => handleDeletePackage(pkg.id, pkg.name)}
+                                  className="bg-red-50 hover:bg-red-100 text-red-700 border border-red-200 font-bold text-xs px-3.5 py-2 rounded-xl flex items-center gap-1.5 transition"
+                                  title="Hapus paket soal ini"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5 text-red-600" />
+                                  <span>Hapus</span>
+                                </button>
+                              </div>
+                            </div>
+                          ))
+                        )}
+
+                        {/* Pagination Controls */}
+                        {totalPages > 1 && (
+                          <div className="flex flex-col sm:flex-row items-center justify-between pt-4 border-t border-slate-100 gap-4 mt-4">
+                            <span className="text-xs text-slate-500 font-medium">
+                              Menampilkan halaman {pkgCurrentPage} dari {totalPages}
                             </span>
-                            <span className="text-[11px] bg-indigo-50 text-indigo-700 border border-indigo-200 font-bold px-2.5 py-0.5 rounded-md">
-                              Mapel: {pkg.subjectName}
-                            </span>
-                            <span className="text-[11px] bg-slate-100 text-slate-700 font-bold px-2.5 py-0.5 rounded-md">
-                              {pkg.questions.length} Butir Soal
-                            </span>
+                            <div className="flex items-center gap-2">
+                              <button
+                                onClick={() => setPkgCurrentPage(prev => Math.max(prev - 1, 1))}
+                                disabled={pkgCurrentPage === 1}
+                                className="px-3 py-1.5 text-xs font-bold bg-white border border-slate-200 text-slate-700 rounded-lg hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed transition"
+                              >
+                                Sebelumnya
+                              </button>
+                              <button
+                                onClick={() => setPkgCurrentPage(prev => Math.min(prev + 1, totalPages))}
+                                disabled={pkgCurrentPage === totalPages}
+                                className="px-3 py-1.5 text-xs font-bold bg-white border border-slate-200 text-slate-700 rounded-lg hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed transition"
+                              >
+                                Berikutnya
+                              </button>
+                            </div>
                           </div>
-
-                          <h4 className="font-extrabold text-slate-900 text-base">{pkg.name}</h4>
-
-                          <div className="flex flex-wrap items-center gap-3 text-xs text-slate-600">
-                            <span><strong>Guru ID:</strong> {pkg.teacherName} ({pkg.teacherId})</span>
-                            <span>•</span>
-                            <span><strong>Kelas Target:</strong> {pkg.classes?.join(', ') || 'Semua Kelas'}</span>
-                            <span>•</span>
-                            <span><strong>Durasi:</strong> {pkg.durationMinutes || 90} Menit</span>
-                          </div>
-                        </div>
-
-                        {/* Opsi Tombol Aksi: Input Soal, Edit Soal, Duplikat Soal, Print Soal, Hapus Soal */}
-                        <div className="flex flex-wrap items-center gap-2 self-start md:self-center">
-                          <button
-                            onClick={() => setSelectedReviewPkgId(pkg.id)}
-                            className="bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs px-3.5 py-2 rounded-xl flex items-center gap-1.5 shadow-sm transition"
-                            title="Masuk ke halaman review seluruh butir soal"
-                          >
-                            <FileText className="w-3.5 h-3.5" />
-                            <span>Input</span>
-                          </button>
-
-                          <button
-                            onClick={() => handleOpenEditPackage(pkg)}
-                            className="bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-300 font-bold text-xs px-3.5 py-2 rounded-xl flex items-center gap-1.5 transition"
-                            title="Edit nama soal, kelas, urutan, dan durasi"
-                          >
-                            <Edit className="w-3.5 h-3.5 text-amber-700" />
-                            <span>Edit</span>
-                          </button>
-
-                          <button
-                            onClick={() => handleDuplicatePackage(pkg.id)}
-                            className="bg-slate-100 hover:bg-slate-200 text-slate-800 border border-slate-300 font-bold text-xs px-3.5 py-2 rounded-xl flex items-center gap-1.5 transition"
-                            title="Duplikat paket soal ini"
-                          >
-                            <Copy className="w-3.5 h-3.5 text-slate-600" />
-                            <span>Duplikat</span>
-                          </button>
-
-                          <button
-                            onClick={() => onOpenPrint({ type: 'package', pkg })}
-                            className="bg-purple-50 hover:bg-purple-100 text-purple-700 border border-purple-200 font-bold text-xs px-3.5 py-2 rounded-xl flex items-center gap-1.5 transition"
-                            title="Print soal ini (PDF)"
-                          >
-                            <Printer className="w-3.5 h-3.5 text-purple-600" />
-                            <span>Print</span>
-                          </button>
-
-                          <button
-                            onClick={() => handleDeletePackage(pkg.id, pkg.name)}
-                            className="bg-red-50 hover:bg-red-100 text-red-700 border border-red-200 font-bold text-xs px-3.5 py-2 rounded-xl flex items-center gap-1.5 transition"
-                            title="Hapus paket soal ini"
-                          >
-                            <Trash2 className="w-3.5 h-3.5 text-red-600" />
-                            <span>Hapus</span>
-                          </button>
-                        </div>
-                      </div>
-                    ))}
+                        )}
+                      </>
+                    );
+                  })()}
                 </div>
               </div>
             </div>
@@ -3672,7 +3777,9 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                         } else if (Array.isArray(s.answers)) {
                           parsedAnswers = s.answers;
                         }
-                        const answered = parsedAnswers.filter(a => a && a.selectedOptionIds && a.selectedOptionIds.length > 0).length;
+                        const answered = s.answeredCount !== undefined
+                          ? s.answeredCount
+                          : parsedAnswers.filter(a => a && a.selectedOptionIds && a.selectedOptionIds.length > 0).length;
                         const doubtful = parsedAnswers.filter(a => a && a.isDoubtful).length;
                         const unanswered = totalQuestions - answered;
 

@@ -31,6 +31,7 @@ import {
   createAnnouncementInGolang,
   deleteAnnouncementInGolang,
 } from './lib/supabaseService';
+import { supabase } from './lib/supabase';
 
 import {
   UserRole,
@@ -48,7 +49,7 @@ import {
 } from './types';
 const defaultSettings: Settings = {
   bimbelName: 'HIPO',
-  ownerName: 'Load Data...',
+  ownerName: 'Tunggu Sebentar...',
   address: ' ',
   phone: ' ',
 };
@@ -253,23 +254,124 @@ export default function App() {
     loadSupabaseData();
   }, []);
 
-  // Poll sessions periodically for live updates (Live Monitoring)
+  // Global Realtime Listener untuk meng-update state tanpa F5 (setelah polling dihapus)
   useEffect(() => {
-    let interval: ReturnType<typeof setInterval>;
-    if (isLoggedIn) {
-      interval = setInterval(async () => {
-        try {
-          const sbSessions = await getSessionsFromSupabase();
-          if (sbSessions) {
-            setSessions(sbSessions);
+    if (!isLoggedIn) return;
+
+    // Listener untuk exam_sessions
+    const sessionChannel = supabase.channel('global_sessions_changes')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'exam_sessions' },
+        (payload) => {
+          if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
+            const s = payload.new;
+            const parsedSession: ExamSession = {
+              id: Number(s.id),
+              studentId: Number(s.student_id ?? s.studentId ?? 0),
+              studentName: s.student_name || s.studentName || '',
+              studentNis: s.student_nis || s.studentNis || '',
+              className: s.class_name || s.className || '',
+              tryoutId: Number(s.tryout_id ?? s.tryoutId ?? 0),
+              tryoutTitle: s.tryout_title || s.tryoutTitle || '',
+              startTime: s.start_time || s.startTime || '',
+              endTime: s.end_time || s.endTime || undefined,
+              status: s.status || 'active',
+              answers: s.answers || undefined,
+              finalScore: Number(s.final_score ?? s.finalScore ?? 0),
+              violationsCount: Number(s.violations_count ?? s.violationsCount ?? 0),
+            };
+
+            handleSetSessions((prev) => {
+              const exists = prev.find(p => p.id === parsedSession.id);
+              if (exists) {
+                return prev.map(p => p.id === parsedSession.id ? parsedSession : p);
+              }
+              return [...prev, parsedSession];
+            });
+          } else if (payload.eventType === 'DELETE') {
+            handleSetSessions((prev) => prev.filter(p => p.id !== payload.old.id));
           }
-        } catch (err) {
-          // Silent catch for background polling
         }
-      }, 5000); // 5 seconds
-    }
+      )
+      .subscribe();
+
+    // Listener untuk exam_scores
+    const scoreChannel = supabase.channel('global_scores_changes')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'exam_scores' },
+        (payload) => {
+          if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
+            const sc = payload.new;
+            const parsedScore: ExamScoreRecord = {
+              id: Number(sc.id),
+              studentNis: sc.student_nis || sc.studentNis || '',
+              studentName: sc.student_name || sc.studentName || '',
+              className: sc.class_name || sc.className || '',
+              subjectName: sc.subject_name || sc.subjectName || '',
+              tryoutTitle: sc.tryout_title || sc.tryoutTitle || '',
+              finalScore: Number(sc.final_score ?? sc.score ?? 0),
+              totalCorrect: Number(sc.total_correct ?? sc.totalCorrect ?? 0),
+              totalWrong: Number(sc.total_wrong ?? sc.totalWrong ?? 0),
+              date: sc.date || new Date().toISOString().split('T')[0],
+              show_review: sc.show_review ?? false,
+              answers: sc.answers || [],
+            };
+
+            setScores((prev) => {
+              const exists = prev.find(p => p.id === parsedScore.id);
+              if (exists) {
+                return prev.map(p => p.id === parsedScore.id ? parsedScore : p);
+              }
+              return [...prev, parsedScore];
+            });
+          } else if (payload.eventType === 'DELETE') {
+            setScores((prev) => prev.filter(p => p.id !== payload.old.id));
+          }
+        }
+      )
+      .subscribe();
+
+    // Listener untuk tryout_items
+    const tryoutChannel = supabase.channel('global_tryouts_changes')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'tryout_items' },
+        (payload) => {
+          if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
+            const tr = payload.new as any;
+            const parsedTryout: TryoutItem = {
+              id: Number(tr.id),
+              packageId: Number(tr.package_id ?? 0),
+              title: tr.title || '',
+              token: tr.token || '',
+              durationMinutes: Number(tr.duration_minutes ?? 90),
+              startTime: tr.start_time || new Date().toISOString(),
+              endTime: tr.end_time || new Date().toISOString(),
+              isRandomOrder: tr.is_random_order ?? true,
+              showResultToStudent: tr.show_result_to_student ?? true,
+              isActive: tr.is_active ?? true,
+              allowedClassNames: Array.isArray(tr.allowed_class_names) ? tr.allowed_class_names : [],
+            };
+            handleSetTryouts((prev) => {
+              const exists = prev.find(p => p.id === parsedTryout.id);
+              if (exists) {
+                return prev.map(p => p.id === parsedTryout.id ? parsedTryout : p);
+              }
+              return [...prev, parsedTryout];
+            });
+          } else if (payload.eventType === 'DELETE') {
+            handleSetTryouts((prev) => prev.filter(p => p.id !== payload.old.id));
+          }
+        }
+      )
+      .subscribe();
+
     return () => {
-      if (interval) clearInterval(interval);
+      supabase.removeChannel(sessionChannel);
+      supabase.removeChannel(scoreChannel);
+      supabase.removeChannel(tryoutChannel);
     };
   }, [isLoggedIn]);
 
@@ -519,7 +621,9 @@ export default function App() {
       : null;
 
     // 2. Update state UI (pure — tidak ada DB call di sini)
-    handleSetScores((prev) => [newScore, ...prev]);
+    // Hapus optimistic update lokal untuk score agar tidak terjadi duplikat saat Realtime masuk.
+    // handleSetScores((prev) => [newScore, ...prev]);
+
     if (finishedSession) {
       handleSetSessions((prev) =>
         prev.map((s) =>
@@ -628,6 +732,11 @@ export default function App() {
         onCancel={() => setActiveExamTryout(null)}
         onFinish={handleFinishExam}
         onForceStoppedByAdmin={() => {
+          if (currentSession) {
+            handleSetSessions(prev =>
+              prev.map(s => s.id === currentSession.id ? { ...s, status: 'finished' } : s)
+            );
+          }
           setActiveExamTryout(null);
           setCurrentRole('siswa');
           setFinishedExamMessage('Ujian Sudah Diselesaikan Admin dan Nilaimu Sudah Masuk.');
@@ -825,6 +934,7 @@ export default function App() {
                 packages={packages}
                 currentToken={currentToken}
                 sessions={sessions}
+                scores={scores}
                 onStartExam={handleStartExam}
               />
             )}

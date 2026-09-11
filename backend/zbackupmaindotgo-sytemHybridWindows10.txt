@@ -1,3 +1,5 @@
+ini untuk main.go versi hybrid langsung copy dari package main sampai kebawah
+
 package main
 
 import (
@@ -63,16 +65,15 @@ func main() {
 	})
 
 	// Menyajikan (Serve) file Web Frontend React
-	// Kita arahkan ke folder "./dist" agar Anda cukup meng-copy folder dist dari React
+	// Kita arahkan ke folder "./dist" agar Anda cukup meng-copy folder dist dari React 
 	// dan menaruhnya persis di sebelah file .exe ini.
+	app.Static("/", "./dist")
 
-	// JIKA MAU DI BUILD PAKAI MODE HYBRID MAKA HILANGKAN TANDA // PADA app.static, app.get, return, dan }) DI BAWAH INI
-
-	//	app.Static("/", "./dist")
-
-	//	app.Get("/*", func(c *fiber.Ctx) error {
-	//	return c.SendFile("./dist/index.html")
-	//})
+	// Fallback Route untuk SPA React (React Router)
+	// Jika user me-refresh halaman, kembalikan ke index.html
+	app.Get("/*", func(c *fiber.Ctx) error {
+		return c.SendFile("./dist/index.html")
+	})
 
 	port := os.Getenv("PORT")
 	if port == "" {

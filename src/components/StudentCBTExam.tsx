@@ -75,10 +75,31 @@ export const StudentCBTExam: React.FC<StudentCBTExamProps> = ({
   const [currentIdx, setCurrentIdx] = useState(0);
 
   // Remaining time in seconds
-  const [secondsLeft, setSecondsLeft] = useState(tryout.durationMinutes * 60);
+  const [secondsLeft, setSecondsLeft] = useState(() => {
+    if (session?.startTime && tryout?.durationMinutes) {
+      const start = new Date(session.startTime).getTime();
+      const now = new Date().getTime();
+      const elapsed = Math.floor((now - start) / 1000);
+      const total = tryout.durationMinutes * 60;
+      const left = total - elapsed;
+      return left > 0 ? left : 0;
+    }
+    return tryout.durationMinutes * 60;
+  });
 
   // Answers Map
   const [answers, setAnswers] = useState<Record<number, StudentAnswer>>(() => {
+    if (session?.id) {
+      const saved = window.localStorage.getItem(`cbt_answers_${session.id}`);
+      if (saved) {
+        try {
+          return JSON.parse(saved);
+        } catch (e) {
+          console.error('Failed to parse saved answers');
+        }
+      }
+    }
+
     const initial: Record<number, StudentAnswer> = {};
 
     // Inisialisasi struktur awal
@@ -104,6 +125,17 @@ export const StudentCBTExam: React.FC<StudentCBTExamProps> = ({
 
   // True/False answers map: questionId -> statementOptionId -> 'benar' | 'salah'
   const [tfAnswers, setTfAnswers] = useState<Record<number, Record<number, 'benar' | 'salah'>>>(() => {
+    if (session?.id) {
+      const saved = window.localStorage.getItem(`cbt_tfanswers_${session.id}`);
+      if (saved) {
+        try {
+          return JSON.parse(saved);
+        } catch (e) {
+          console.error('Failed to parse saved tfAnswers');
+        }
+      }
+    }
+
     const initialTf: Record<number, Record<number, 'benar' | 'salah'>> = {};
 
     // Load jawaban B/S yang sebelumnya tersimpan (di-embed di dalam answersArray pada session.answers)
@@ -117,6 +149,37 @@ export const StudentCBTExam: React.FC<StudentCBTExamProps> = ({
 
     return initialTf;
   });
+
+  // Effect untuk auto-save ke LocalStorage dan Broadcast Realtime
+  useEffect(() => {
+    if (!session?.id) return;
+
+    // 1. Simpan ke LocalStorage
+    window.localStorage.setItem(`cbt_answers_${session.id}`, JSON.stringify(answers));
+    window.localStorage.setItem(`cbt_tfanswers_${session.id}`, JSON.stringify(tfAnswers));
+
+    // 2. Hitung total soal terjawab
+    let count = 0;
+    questions.forEach((q) => {
+      if (q.questionType === 'single_choice' || q.questionType === 'complex_choice' || q.questionType === 'graded_choice') {
+        if (answers[q.id]?.selectedOptionIds?.length > 0) count++;
+      } else if (q.questionType === 'true_false') {
+        if (tfAnswers[q.id] && Object.keys(tfAnswers[q.id]).length > 0) count++;
+      }
+    });
+
+    // 3. Pancarkan (Broadcast) progress ke Admin
+    supabase.channel('exam_monitoring').send({
+      type: 'broadcast',
+      event: 'student_progress',
+      payload: {
+        sessionId: session.id,
+        studentName: currentStudent.name,
+        answeredCount: count,
+      },
+    }).catch(err => console.warn('Failed to broadcast progress', err));
+
+  }, [answers, tfAnswers, session?.id, currentStudent.name, questions]);
 
   // Auto save indicator feedback
   const [isAutoSaving, setIsAutoSaving] = useState(false);
@@ -453,6 +516,17 @@ export const StudentCBTExam: React.FC<StudentCBTExamProps> = ({
   const handleForceFinish = () => {
     if (hasFinishedRef.current) return; // Already finished, prevent double-fire
     hasFinishedRef.current = true;
+
+    // Bersihkan timeout autosave yang tertinggal
+    if (autoSaveTimeoutRef.current) {
+      clearTimeout(autoSaveTimeoutRef.current);
+    }
+
+    // Bersihkan LocalStorage
+    if (session?.id) {
+      window.localStorage.removeItem(`cbt_answers_${session.id}`);
+      window.localStorage.removeItem(`cbt_tfanswers_${session.id}`);
+    }
 
     const { totalObtained, correctCount, wrongCount } = calculateTotalExamScore(questions, answers, tfAnswers);
 

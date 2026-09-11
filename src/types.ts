@@ -107,6 +107,7 @@ export interface ExamSession {
   finalScore: number;
   violationsCount: number;
   answers?: any;
+  answeredCount?: number;
 }
 
 export interface StudentAnswer {
@@ -139,7 +140,7 @@ export interface ExamScoreRecord {
   answers?: any[];
 }
 
-export type PrintState = 
+export type PrintState =
   | { type: 'beritaAcara' }
   | { type: 'package'; pkg: QuestionPackage }
   | { type: 'examResult'; score: ExamScoreRecord; reviewPackage: QuestionPackage }

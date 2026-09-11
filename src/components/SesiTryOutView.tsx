@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { StudentUser, TryoutItem, QuestionPackage, ExamSession } from '../types';
+import { StudentUser, TryoutItem, QuestionPackage, ExamSession, ExamScoreRecord } from '../types';
 import {
   KeyRound,
   Play,
@@ -21,6 +21,7 @@ interface SesiTryOutViewProps {
   packages: QuestionPackage[];
   currentToken: string;
   sessions?: ExamSession[];
+  scores?: ExamScoreRecord[];
   onStartExam: (tryout: TryoutItem) => void;
 }
 
@@ -30,6 +31,7 @@ export const SesiTryOutView: React.FC<SesiTryOutViewProps> = ({
   packages,
   currentToken,
   sessions = [],
+  scores = [],
   onStartExam,
 }) => {
   // Modal confirmation state
@@ -137,7 +139,8 @@ export const SesiTryOutView: React.FC<SesiTryOutViewProps> = ({
             const questionCount = pkg ? pkg.questions.length : 0;
             const subjectName = pkg ? pkg.subjectName : 'Mata Pelajaran Ujian';
             const studentSession = sessions.find((s) => s.studentId === currentStudent.id && s.tryoutId === tryout.id);
-            const hasFinished = studentSession?.status === 'finished';
+            const hasScore = scores?.some((s) => s.studentNis === currentStudent.nis && s.tryoutTitle === tryout.title);
+            const hasFinished = studentSession?.status === 'finished' || hasScore;
             const isBlocked = studentSession?.status === 'blocked';
             const hasStarted = studentSession?.status === 'active';
 
@@ -192,7 +195,7 @@ export const SesiTryOutView: React.FC<SesiTryOutViewProps> = ({
                       className="w-full bg-orange-50 border border-orange-200 text-orange-700 font-bold text-xs py-3 rounded-2xl flex items-center justify-center gap-2 cursor-not-allowed"
                     >
                       <ShieldCheck className="w-4 h-4" />
-                      <span>Selesai Ujian</span>
+                      <span>{hasScore ? 'Try Out Sudah Dikerjakan' : 'Selesai Ujian'}</span>
                     </button>
                   ) : isBlocked ? (
                     <button

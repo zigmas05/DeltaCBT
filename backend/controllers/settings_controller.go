@@ -11,23 +11,31 @@ import (
 )
 
 // GetBimbelSettings - Mengambil pengaturan bimbel dari database
+// GetBimbelSettings - Mengambil pengaturan bimbel dari database
 func GetBimbelSettings(c *fiber.Ctx) error {
 	query := `SELECT id, bimbel_name, owner_name, address, phone, logo_url, created_at, updated_at 
 	          FROM bimbel_settings ORDER BY id DESC LIMIT 1`
 
 	var settings models.BimbelSettings
-	err := config.DB.QueryRow(context.Background(), query).Scan(
+
+	// PERBAIKAN 1: Berikan batas waktu maksimal 3 detik.
+	// Jika Supabase lelet lebih dari 3 detik, langsung lewati agar tidak stuck.
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel() // Wajib agar memori tidak bocor
+
+	err := config.DB.QueryRow(ctx, query).Scan(
 		&settings.ID, &settings.BimbelName, &settings.OwnerName, &settings.Address,
 		&settings.Phone, &settings.LogoURL, &settings.CreatedAt, &settings.UpdatedAt,
 	)
 
 	if err != nil {
 		log.Printf("ERROR GET BIMBEL SETTINGS: %v", err)
-		// Jika belum ada data, return default settings
+
+		// Jika gagal, return default settings agar frontend tidak error
 		defaultSettings := models.BimbelSettings{
 			ID:         1,
-			BimbelName: "Bimbel Champion Academy",
-			OwnerName:  "",
+			BimbelName: "HIPO",
+			OwnerName:  "Coba Refresh Lagi ya", // Pesan diubah agar lebih informatif
 			Address:    "",
 			Phone:      "",
 			LogoURL:    "",
@@ -66,7 +74,7 @@ func UpdateBimbelSettings(c *fiber.Ctx) error {
 		// Insert baru jika belum ada
 		query := `INSERT INTO bimbel_settings (bimbel_name, owner_name, address, phone, logo_url, created_at, updated_at) 
 		          VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id`
-		
+
 		err := config.DB.QueryRow(context.Background(), query,
 			settings.BimbelName, settings.OwnerName, settings.Address,
 			settings.Phone, settings.LogoURL, updatedAt, updatedAt).Scan(&settings.ID)
@@ -81,7 +89,7 @@ func UpdateBimbelSettings(c *fiber.Ctx) error {
 	} else {
 		// Update jika sudah ada
 		query := `UPDATE bimbel_settings SET bimbel_name=$1, owner_name=$2, address=$3, phone=$4, logo_url=$5, updated_at=$6 WHERE id=1`
-		
+
 		_, err := config.DB.Exec(context.Background(), query,
 			settings.BimbelName, settings.OwnerName, settings.Address,
 			settings.Phone, settings.LogoURL, updatedAt)

@@ -1,6 +1,8 @@
 import { supabase, isSupabaseConfigured } from './supabase';
 import { ClassItem, StaffUser, StudentUser } from '../types';
 
+//ini untu bagian yang harus di onlinekan atau panggil .env di bawahnya. dan jadi variabel baru BACKEND_BASE
+const BACKEND_BASE = (import.meta as any).env.VITE_BACKEND_URL || 'http://localhost:8080';
 
 export interface SupabaseStatus {
   isConnected: boolean;
@@ -327,7 +329,7 @@ export async function getStaffFromSupabase(): Promise<StaffUser[] | null> {
 //untuk input dan edit data yang ada di staff atau guru
 export async function upsertStaffToSupabase(member: StaffUser): Promise<boolean> {
   try {
-    const BASE_URL = 'http://localhost:8080/api/staff';
+    const BASE_URL = `${BACKEND_BASE}/api/staff`;
 
     // Cek apakah ini data baru atau edit data lama.
     // Asumsinya ID lokal buatan Date.now() bernilai triliunan (> 1.000.000.000.000)
@@ -375,7 +377,7 @@ export async function upsertStaffToSupabase(member: StaffUser): Promise<boolean>
 export async function deleteStaffFromSupabase(staffId: number): Promise<boolean> {
   try {
     // Endpoint mengarah ke DELETE /api/staff/:id
-    const url = `http://localhost:8080/api/staff/${staffId}`;
+    const url = `${BACKEND_BASE}/api/staff/${staffId}`;
 
     const response = await fetch(url, {
       method: 'DELETE',
@@ -407,7 +409,6 @@ export async function deleteStaffFromSupabase(staffId: number): Promise<boolean>
 // Additional helpers used by AdminPanel
 // -------------------------
 
-const BACKEND_BASE = 'http://localhost:8080';
 
 export async function createSubjectInGolang(code: string, name: string): Promise<any | null> {
   try {
